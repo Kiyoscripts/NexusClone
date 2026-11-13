@@ -85,6 +85,21 @@
             android:name=".ui.macro.MacroActivity"
             android:exported="false" />
 
+        <!-- NexusClone: proxy profiles -->
+        <activity
+            android:name=".ui.proxy.ProxyActivity"
+            android:exported="false" />
+
+        <!-- NexusClone: device identity profiles -->
+        <activity
+            android:name=".ui.identity.IdentityActivity"
+            android:exported="false" />
+
+        <!-- NexusClone: periodic quota enforcement -->
+        <receiver
+            android:name=".core.quota.QuotaReceiver"
+            android:exported="false" />
+
         <!-- NexusClone: keep-alive foreground service -->
         <service
             android:name=".core.keepalive.KeepAliveService"

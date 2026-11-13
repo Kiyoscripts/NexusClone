@@ -133,4 +133,7 @@
     <string name="confirm_clear">Clear all data for this clone?</string>
     <string name="ok">OK</string>
     <string name="close">Close</string>
+    <string name="instance_float">Floating window</string>
+    <string name="quota_set">Set quota (MB, 0 = unlimited)</string>
+    <string name="float_permission">Overlay permission required</string>
 </resources>

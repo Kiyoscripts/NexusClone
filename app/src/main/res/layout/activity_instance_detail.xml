@@ -100,6 +100,30 @@
                 android:text="@string/instance_macro" />
 
             <Button
+                android:id="@+id/btnProxy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_proxy" />
+
+            <Button
+                android:id="@+id/btnIdentity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_identity" />
+
+            <Button
+                android:id="@+id/btnQuota"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_quota" />
+
+            <Button
+                android:id="@+id/btnFloat"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_float" />
+
+            <Button
                 android:id="@+id/btnDiagnostics"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

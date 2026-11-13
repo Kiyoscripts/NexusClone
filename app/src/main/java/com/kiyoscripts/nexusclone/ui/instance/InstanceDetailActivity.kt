@@ -10,11 +10,14 @@ import androidx.lifecycle.lifecycleScope
 import com.kiyoscripts.nexusclone.R
 import com.kiyoscripts.nexusclone.core.backup.SnapshotManager
 import com.kiyoscripts.nexusclone.core.diag.Diagnostics
+import com.kiyoscripts.nexusclone.core.floating.FloatingWindowController
 import com.kiyoscripts.nexusclone.core.instance.CloneInstance
 import com.kiyoscripts.nexusclone.core.instance.InstanceManager
 import com.kiyoscripts.nexusclone.databinding.ActivityInstanceDetailBinding
 import com.kiyoscripts.nexusclone.ui.diag.DiagnosticsActivity
+import com.kiyoscripts.nexusclone.ui.identity.IdentityActivity
 import com.kiyoscripts.nexusclone.ui.macro.MacroActivity
+import com.kiyoscripts.nexusclone.ui.proxy.ProxyActivity
 import kotlinx.coroutines.launch
 
 /**
@@ -174,6 +177,51 @@ class InstanceDetailActivity : AppCompatActivity() {
         binding.btnMacro.setOnClickListener {
             val inst = current ?: return@setOnClickListener
             MacroActivity.start(this, inst.userId, inst.packageName)
+        }
+
+        binding.btnProxy.setOnClickListener {
+            ProxyActivity.start(this, instanceId)
+        }
+
+        binding.btnIdentity.setOnClickListener {
+            IdentityActivity.start(this, instanceId)
+        }
+
+        binding.btnQuota.setOnClickListener {
+            val inst = current ?: return@setOnClickListener
+            val currentMb = if (inst.quotaBytes > 0) (inst.quotaBytes / (1024 * 1024)).toString() else "0"
+            val input = android.widget.EditText(this).apply { setText(currentMb) }
+            AlertDialog.Builder(this)
+                .setTitle(R.string.quota_set)
+                .setView(input)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    val mb = input.text.toString().toLongOrNull()?.coerceAtLeast(0) ?: 0
+                    lifecycleScope.launch {
+                        manager.setQuota(instanceId, mb * 1024 * 1024)
+                        reload()
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+
+        binding.btnFloat.setOnClickListener {
+            val inst = current ?: return@setOnClickListener
+            val fw = FloatingWindowController(this)
+            if (!fw.canDraw()) {
+                toast(getString(R.string.float_permission))
+                try {
+                    startActivity(fw.permissionIntent())
+                } catch (e: Exception) {
+                    toast("cannot open overlay settings")
+                }
+                return@setOnClickListener
+            }
+            if (fw.isShowing()) {
+                fw.hide()
+            } else {
+                fw.show(inst.label) { fw.hide() }
+            }
         }
 
         binding.btnDiagnostics.setOnClickListener {
