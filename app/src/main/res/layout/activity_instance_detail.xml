@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <include
+        android:id="@+id/toolbarLayout"
+        layout="@layout/view_toolbar" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/primary_text"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/stateLine"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/secondary_text"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/sizeLine"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="@color/secondary_text"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/keepAliveLine"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="@color/secondary_text"
+                android:textSize="13sp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="12dp"
+                android:background="#22000000" />
+
+            <Button
+                android:id="@+id/btnLaunch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_launch" />
+
+            <Button
+                android:id="@+id/btnStop"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_stop" />
+
+            <Button
+                android:id="@+id/btnFreeze"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_freeze" />
+
+            <Button
+                android:id="@+id/btnRename"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_rename" />
+
+            <Button
+                android:id="@+id/btnSnapshot"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_snapshot" />
+
+            <Button
+                android:id="@+id/btnRestore"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_restore" />
+
+            <Button
+                android:id="@+id/btnMacro"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_macro" />
+
+            <Button
+                android:id="@+id/btnDiagnostics"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_diagnostics" />
+
+            <Button
+                android:id="@+id/btnClear"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_clear" />
+
+            <Button
+                android:id="@+id/btnDelete"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_delete" />
+
+            <TextView
+                android:id="@+id/detail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/secondary_text"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

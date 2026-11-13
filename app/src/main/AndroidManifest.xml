@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Android 11 package visibility: we must enumerate installed apps to clone them. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Keep-alive -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Instance shortcuts -->
+    <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
+
+    <!-- Floating window -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application
+        android:name=".app.App"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.BlackBox"
+        android:enableOnBackInvokedCallback="true"
+        tools:targetApi="n">
+
+        <activity
+            android:name=".view.fake.FollowMyLocationOverlay"
+            android:exported="false" />
+        <activity android:name=".view.setting.SettingActivity" />
+        <activity android:name=".view.gms.GmsManagerActivity" />
+        <activity
+            android:name=".view.main.WelcomeActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/WelcomeTheme">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".view.list.ListActivity" />
+        <activity android:name=".view.fake.FakeManagerActivity" />
+        <activity android:name=".view.xp.XpActivity" />
+        <activity
+            android:name=".view.main.ShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true" />
+        <activity
+            android:name=".view.main.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
+        </activity>
+
+        <!-- NexusClone: instance grid -->
+        <activity
+            android:name=".ui.instances.InstancesActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
+
+        <!-- NexusClone: per-instance detail -->
+        <activity
+            android:name=".ui.instance.InstanceDetailActivity"
+            android:exported="false" />
+
+        <!-- NexusClone: diagnostics -->
+        <activity
+            android:name=".ui.diag.DiagnosticsActivity"
+            android:exported="false" />
+
+        <!-- NexusClone: macro list -->
+        <activity
+            android:name=".ui.macro.MacroActivity"
+            android:exported="false" />
+
+        <!-- NexusClone: keep-alive foreground service -->
+        <service
+            android:name=".core.keepalive.KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps cloned application instances resident so the user does not lose in-progress work when switching between clones." />
+        </service>
+
+        <!-- NexusClone: expedited job fallback -->
+        <service
+            android:name=".core.keepalive.KeepAliveJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- NexusClone: resurrection pulse and boot -->
+        <receiver
+            android:name=".core.keepalive.KeepAliveReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
