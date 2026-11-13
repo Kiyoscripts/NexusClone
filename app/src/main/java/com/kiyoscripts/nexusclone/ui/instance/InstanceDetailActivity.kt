@@ -119,7 +119,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         }
 
         binding.btnRename.setOnClickListener {
-            val inst = current ?: return@click
+            val inst = current ?: return@setOnClickListener
             val input = android.widget.EditText(this).apply { setText(inst.label) }
             AlertDialog.Builder(this)
                 .setTitle(R.string.instance_rename)
@@ -135,7 +135,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         }
 
         binding.btnSnapshot.setOnClickListener {
-            val inst = current ?: return@click
+            val inst = current ?: return@setOnClickListener
             lifecycleScope.launch {
                 binding.btnSnapshot.isEnabled = false
                 val r = snapshots.snapshot(inst)
@@ -149,11 +149,11 @@ class InstanceDetailActivity : AppCompatActivity() {
         }
 
         binding.btnRestore.setOnClickListener {
-            val inst = current ?: return@click
+            val inst = current ?: return@setOnClickListener
             val files = snapshots.list()
             if (files.isEmpty()) {
                 toast("no snapshots")
-                return@click
+                return@setOnClickListener
             }
             val names = files.map { it.name }.toTypedArray()
             AlertDialog.Builder(this)
@@ -172,7 +172,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         }
 
         binding.btnMacro.setOnClickListener {
-            val inst = current ?: return@click
+            val inst = current ?: return@setOnClickListener
             MacroActivity.start(this, inst.userId, inst.packageName)
         }
 

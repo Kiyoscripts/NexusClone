@@ -128,8 +128,8 @@ class SnapshotManager(private val context: Context) {
 
                 // Pass 1: verify.
                 ZipInputStream(BufferedInputStream(FileInputStream(archive))).use { zis ->
-                    var entry: ZipEntry? = zis.nextEntry
-                    while (entry != null) {
+                    while (true) {
+                        val entry: ZipEntry = zis.nextEntry ?: break
                         val name = entry.name
                         if (name != MANIFEST && !entry.isDirectory) {
                             val want = expected[name]
@@ -146,7 +146,6 @@ class SnapshotManager(private val context: Context) {
                             }
                         }
                         zis.closeEntry()
-                        entry = zis.nextEntry
                     }
                 }
 
@@ -154,8 +153,8 @@ class SnapshotManager(private val context: Context) {
                 val dataRoot = manager.instanceDataDir(inst)
                 val extRoot = manager.instanceExternalDir(inst)
                 ZipInputStream(BufferedInputStream(FileInputStream(archive))).use { zis ->
-                    var entry: ZipEntry? = zis.nextEntry
-                    while (entry != null) {
+                    while (true) {
+                        val entry: ZipEntry = zis.nextEntry ?: break
                         val name = entry.name
                         if (name != MANIFEST && !entry.isDirectory) {
                             val target = resolveTarget(name, dataRoot, extRoot)
@@ -169,7 +168,6 @@ class SnapshotManager(private val context: Context) {
                             }
                         }
                         zis.closeEntry()
-                        entry = zis.nextEntry
                     }
                 }
                 Result.success(Unit)
@@ -184,14 +182,13 @@ class SnapshotManager(private val context: Context) {
         if (!archive.exists()) return null
         return try {
             ZipInputStream(BufferedInputStream(FileInputStream(archive))).use { zis ->
-                var entry: ZipEntry? = zis.nextEntry
-                while (entry != null) {
+                while (true) {
+                    val entry: ZipEntry = zis.nextEntry ?: break
                     if (entry.name == MANIFEST) {
                         val text = zis.readBytes().toString(Charsets.UTF_8)
                         return JSONObject(text)
                     }
                     zis.closeEntry()
-                    entry = zis.nextEntry
                 }
             }
             null
