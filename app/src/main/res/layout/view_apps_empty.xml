@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Empty state for the app grid.
+
+  The library default (base_empty.xml) is a bare centred TextView reading "Empty",
+  which on a white background is indistinguishable from a broken screen. This one
+  says what is actually going on and what to do about it.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="?android:attr/colorBackground"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingStart="32dp"
+        android:paddingEnd="32dp">
+
+    <ImageView
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:alpha="0.35"
+            android:contentDescription="@null"
+            android:src="@mipmap/ic_launcher" />
+
+    <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:text="@string/apps_empty_title"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+    <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp"
+            android:text="@string/apps_empty_body"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="14sp" />
+
+</LinearLayout>

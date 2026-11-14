@@ -110,6 +110,8 @@
     <string name="keepalive_level_2">Service + exemption</string>
     <string name="keepalive_setting_title">Keep-alive service</string>
     <string name="keepalive_setting_summary">Keeps clones resident in the background. Off by default because it can stall the host on some devices.</string>
+    <string name="apps_empty_title">No apps cloned yet</string>
+    <string name="apps_empty_body">Tap the + button to pick an APK and install it into this user.</string>
     <string name="macro_record">Record</string>
     <string name="macro_stop">Stop</string>
     <string name="macro_play">Play</string>
