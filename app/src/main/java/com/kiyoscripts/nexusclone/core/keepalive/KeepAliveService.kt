@@ -38,11 +38,23 @@ class KeepAliveService : Service() {
         fun start(context: Context) {
             val i = Intent(context, KeepAliveService::class.java).setAction(ACTION_START)
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(i)
-                } else {
-                    context.startService(i)
-                }
+                // Use startService(), not startForegroundService().
+                //
+                // startForegroundService() sets fgRequired and arms a 10 second timer. If
+                // the service cannot reach startForeground() in that window — which is
+                // what happens on Android 12 when the start is treated as a background
+                // start, or when the notification path throws — the framework raises
+                //   Context.startForegroundService() did not then call
+                //   Service.startForeground()
+                // and kills the host with a background ANR. Retrying startForeground()
+                // with a fallback notification does not help, because the exception is
+                // thrown by the framework's own permission check, not by the notification.
+                //
+                // startService() carries no such contract. The service still calls
+                // startForeground() when it can, so it is promoted to foreground normally;
+                // if that fails it simply runs as a background service instead of taking
+                // the whole process down.
+                context.startService(i)
             } catch (e: Exception) {
                 Log.w(TAG, "start failed: ${e.message}")
             }
