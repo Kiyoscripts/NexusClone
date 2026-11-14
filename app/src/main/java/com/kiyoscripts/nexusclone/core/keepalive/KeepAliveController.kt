@@ -46,7 +46,13 @@ class KeepAliveController private constructor(private val context: Context) {
             }
     }
 
-    private val manager = InstanceManager.get(context)
+    // Lazy, not eager. InstanceManager's constructor builds an InstanceStore, which opens
+    // the SQLite database. KeepAliveController is constructed from
+    // KeepAliveService.onStartCommand(), and doing that disk work there ran on the main
+    // thread while the framework was timing service execution:
+    //   am_anr: executing service .. KeepAliveService
+    // Only applyLevel() actually needs the manager, so resolve it on first use.
+    private val manager by lazy { InstanceManager.get(context) }
 
     /** 0 = nothing, 1 = foreground service only, 2 = service + battery exemption. */
     fun strength(): Int {
