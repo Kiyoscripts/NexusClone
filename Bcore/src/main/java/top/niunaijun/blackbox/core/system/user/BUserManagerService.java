@@ -70,24 +70,6 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
 
     @Override
     public List<BUserInfo> getUsers() {
-        // Seed the default user lazily, on first read.
-        //
-        // This deliberately does NOT happen in systemReady(): that runs inside
-        // SystemCallProvider.onCreate(), which the framework kills after a 10 second
-        // "timeout publishing content providers". createUser() writes userinfo.conf
-        // through AtomicFile (open, write, fsync, rename), and on a cold start that
-        // pushed provider publish past the deadline, so the :black process was killed
-        // and the host UI came up black with no engine behind it.
-        //
-        // exists() and createUser() are called outside the mUsers block below so the
-        // lock order stays mUserLock -> mUsers, matching createUser().
-        if (!exists(0)) {
-            try {
-                createUser(0);
-            } catch (Exception e) {
-                Slog.e(TAG, "failed to seed user 0", e);
-            }
-        }
         synchronized (mUsers) {
             ArrayList<BUserInfo> bUsers = new ArrayList<>();
             for (BUserInfo value : mUsers.values()) {

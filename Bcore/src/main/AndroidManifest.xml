@@ -542,11 +542,17 @@
             android:excludeFromRecents="true"
             android:theme="@style/LauncherTheme" />
 
+        <!-- No android:permission here. BIND_VPN_SERVICE is a signature permission the
+             host app does not hold, so declaring it made the framework reject our own
+             startForegroundService() call: onStartCommand never ran, startForeground()
+             was never reached, and the system raised
+             "Context.startForegroundService() did not then call Service.startForeground()"
+             then killed the process with "bg anr". The service is exported=false, so
+             nothing outside the app can bind it anyway. -->
         <service
             android:name="top.niunaijun.blackbox.proxy.ProxyVpnService"
             android:enabled="true"
             android:exported="false"
-            android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse">
             <intent-filter>
                 <action android:name="android.net.VpnService" />

@@ -80,5 +80,30 @@ class App : Application() {
         } catch (e: Exception) {
             Log.w("App", "keep-alive start failed: ${e.message}")
         }
+
+        // Seed the default virtual user off the main thread.
+        //
+        // The engine never creates user 0 on a fresh install: BUserManagerService
+        // .systemReady() only calls scanUserL(), which returns early when userinfo.conf
+        // is absent, so getUsers() stays empty and the app grid renders blank.
+        //
+        // It cannot be seeded inside the engine either. systemReady() runs from
+        // SystemCallProvider.onCreate(), which the framework kills after 10 seconds
+        // ("timeout publishing content providers"), and getUsers() is a synchronous
+        // binder call made from MainActivity.initViewPager() on the main thread, so
+        // doing the AtomicFile write there blocks the UI and the screen stays black.
+        //
+        // A background thread in the host process avoids both: the write happens once,
+        // off the main thread, and the result is persisted for every later boot.
+        Thread({
+            try {
+                if (BlackBoxCore.get().users.isEmpty()) {
+                    BlackBoxCore.get().createUser(0)
+                    Log.i("App", "seeded virtual user 0")
+                }
+            } catch (e: Throwable) {
+                Log.w("App", "failed to seed virtual user 0: ${e.message}")
+            }
+        }, "nexus-seed-user0").start()
     }
 }
