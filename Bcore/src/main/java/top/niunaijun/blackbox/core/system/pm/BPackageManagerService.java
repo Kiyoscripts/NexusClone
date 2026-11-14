@@ -740,7 +740,13 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             onPackageInstalled(bPackageSettings.pkg.packageName, userId);
             return result;
         } catch (Throwable t) {
+            // InstallResult.success defaults to true, so returning `result` unchanged here
+            // reported a thrown exception as a successful install. The host checks
+            // `if (!install.success)` and would then persist a CloneInstance row for an
+            // app that was never installed.
             t.printStackTrace();
+            result.success = false;
+            result.msg = t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName();
         } finally {
             if (apkFile != null && option.isFlag(InstallOption.FLAG_URI_FILE)) {
                 FileUtils.deleteDir(apkFile);

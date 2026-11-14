@@ -17,7 +17,7 @@ import top.niunaijun.blackbox.utils.Reflector;
 public abstract class BlackManager<Service extends IInterface> {
     public static final String TAG = "BlackManager";
 
-    private Service mService;
+    private volatile Service mService;
     private final AtomicBoolean mServiceCreationFailed = new AtomicBoolean(false);
     private long mLastRetryTime = 0;
     private long mLastServiceCreationTime = 0;
@@ -43,8 +43,27 @@ public abstract class BlackManager<Service extends IInterface> {
             mServiceCreationFailed.set(false);
         }
 
-        if (mService != null && mService.asBinder().pingBinder() && mService.asBinder().isBinderAlive()) {
-            return mService;
+        // pingBinder() is a synchronous binder transaction: on a BinderProxy it issues
+        // PING_TRANSACTION and blocks in the driver until the target has a free binder
+        // thread. If the engine is busy (for example holding mPackages through a
+        // scanPackage fsync) this blocks here, before any of the timeout logic below is
+        // reached, which is one of the ways the UI hung on getUsers().
+        //
+        // It is also outside the try block, so a non-Binder IInterface whose asBinder()
+        // returns null would throw NullPointerException straight out of getService().
+        // Guard both: null-check the binder and treat a failed ping as "not usable"
+        // rather than letting it escape.
+        if (mService != null) {
+            try {
+                IBinder existing = mService.asBinder();
+                if (existing != null && existing.isBinderAlive() && existing.pingBinder()) {
+                    return mService;
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "pingBinder failed for " + getServiceName() + ": " + t.getMessage());
+            }
+            // Dead or unusable: drop the cached instance so the creation path below runs.
+            mService = null;
         }
 
         // Rate limiting: don't create services too frequently

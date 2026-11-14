@@ -55,7 +55,10 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
         // Putting the entry straight into the map keeps publish fast. The record is
         // persisted the first time anything actually creates a user, and a missing
         // userinfo.conf simply means the seed runs again on the next boot.
-        synchronized (mUserLock) {
+        // Guard with mUsers, not mUserLock: every reader of the map (exists, getUsers,
+        // getAllUsers) synchronizes on mUsers, so writing under mUserLock alone left the
+        // seed invisible to the same mutual exclusion the readers use.
+        synchronized (mUsers) {
             if (!mUsers.containsKey(0)) {
                 BUserInfo bUserInfo = new BUserInfo();
                 bUserInfo.id = 0;
@@ -126,8 +129,13 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
         BUserInfo bUserInfo = new BUserInfo();
         bUserInfo.id = userId;
         bUserInfo.status = BUserStatus.ENABLE;
-        mUsers.put(userId, bUserInfo);
+        // The put must be inside the mUsers block. It used to sit one line above it,
+        // which meant a structural mutation of the HashMap ran with no lock at all while
+        // getUsers() iterated it under mUsers. That is a ConcurrentModificationException
+        // or an infinite loop in HashMap.nextNode, and an infinite loop on a binder
+        // thread is indistinguishable from a hang.
         synchronized (mUsers) {
+            mUsers.put(userId, bUserInfo);
             saveUserInfoLocked();
         }
         return bUserInfo;
