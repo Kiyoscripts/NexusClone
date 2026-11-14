@@ -2,12 +2,14 @@ package com.kiyoscripts.nexusclone.view.setting
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreferenceCompat
 import top.niunaijun.blackbox.BlackBoxCore
 import com.kiyoscripts.nexusclone.R
 import com.kiyoscripts.nexusclone.app.AppManager
+import com.kiyoscripts.nexusclone.core.keepalive.KeepAliveController
 import com.kiyoscripts.nexusclone.util.toast
 import com.kiyoscripts.nexusclone.view.gms.GmsManagerActivity
 import com.kiyoscripts.nexusclone.view.xp.XpActivity
@@ -43,6 +45,8 @@ class SettingFragment : PreferenceFragmentCompat() {
         }
         initGms()
 
+        initKeepAlive()
+
         invalidHideState{
             val xpHidePreference: Preference = (findPreference("xp_hide")!!)
             val hideXposed = AppManager.mBlackBoxLoader.hideXposed()
@@ -62,6 +66,24 @@ class SettingFragment : PreferenceFragmentCompat() {
             val mDaemonEnable = AppManager.mBlackBoxLoader.daemonEnable()
             daemonPreference.setDefaultValue(mDaemonEnable)
             daemonPreference
+        }
+    }
+
+    private fun initKeepAlive() {
+        val pref = findPreference<SwitchPreferenceCompat>("keepalive_enabled") ?: return
+        val controller = KeepAliveController.get(requireContext())
+        pref.isChecked = controller.isEnabled()
+        pref.setOnPreferenceChangeListener { _, newValue ->
+            val enabled = newValue == true
+            // setEnabled() starts or tears down the service, the alarm pulse and the job.
+            // It is cheap on the disable path and only touches the service on the enable
+            // path, so it is safe to run inline from a preference change.
+            try {
+                controller.setEnabled(enabled)
+            } catch (e: Exception) {
+                Log.w("SettingFragment", "keep-alive toggle failed: ${e.message}")
+            }
+            true
         }
     }
 

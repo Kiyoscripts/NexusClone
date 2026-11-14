@@ -74,6 +74,13 @@ class KeepAliveController private constructor(private val context: Context) {
     }
 
     fun start() {
+        // Hard gate. Every layer of this subsystem has ANR'd the host process at least
+        // once, and the host process is the one that draws the UI. Nothing here runs
+        // unless the user has explicitly opted in from Settings.
+        if (!KeepAlivePrefs.isEnabled(context)) {
+            Log.d(TAG, "keep-alive disabled by preference, not starting")
+            return
+        }
         KeepAliveService.start(context)
         schedulePulse()
         scheduleJob()
@@ -88,6 +95,7 @@ class KeepAliveController private constructor(private val context: Context) {
      * framework waiting for startForeground(), producing an ANR.
      */
     fun scheduleOnly() {
+        if (!KeepAlivePrefs.isEnabled(context)) return
         schedulePulse()
         scheduleJob()
     }
@@ -98,6 +106,21 @@ class KeepAliveController private constructor(private val context: Context) {
         cancelJob()
         serviceStarted = false
     }
+
+    /**
+     * Apply the user's preference: start everything when enabled, tear everything down
+     * when disabled. Called from the Settings switch.
+     */
+    fun setEnabled(enabled: Boolean) {
+        KeepAlivePrefs.setEnabled(context, enabled)
+        if (enabled) {
+            start()
+        } else {
+            stop()
+        }
+    }
+
+    fun isEnabled(): Boolean = KeepAlivePrefs.isEnabled(context)
 
     fun isIgnoringBatteryOptimizations(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true

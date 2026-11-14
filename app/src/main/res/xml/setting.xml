@@ -18,6 +18,12 @@
 
     <PreferenceCategory app:title="@string/other">
 
+        <SwitchPreferenceCompat
+                app:key="keepalive_enabled"
+                app:title="@string/keepalive_setting_title"
+                app:summary="@string/keepalive_setting_summary"
+                app:defaultValue="false" />
+
         <Preference
                 android:key="gms_manager"
                 android:title="@string/gms_manager"

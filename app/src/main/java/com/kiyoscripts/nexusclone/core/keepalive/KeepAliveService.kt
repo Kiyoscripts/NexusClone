@@ -78,6 +78,14 @@ class KeepAliveService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A sticky restart can arrive after the user turned keep-alive off. Honour the
+        // preference before doing any work at all.
+        if (!KeepAlivePrefs.isEnabled(this)) {
+            Log.d(TAG, "keep-alive disabled by preference, stopping")
+            stopForegroundCompat()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         when (intent?.action) {
             ACTION_STOP -> {
                 stopForegroundCompat()
@@ -106,6 +114,7 @@ class KeepAliveService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
+        if (!KeepAlivePrefs.isEnabled(this)) return
         // Swiping the host from recents must not take the clones with it.
         KeepAliveController.get(this).scheduleResurrection()
     }

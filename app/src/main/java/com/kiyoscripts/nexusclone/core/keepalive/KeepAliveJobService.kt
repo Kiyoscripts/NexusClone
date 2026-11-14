@@ -24,7 +24,11 @@ class KeepAliveJobService : JobService() {
         // Do the work on a worker and report completion from there.
         Thread({
             try {
-                KeepAliveController.get(this).start()
+                if (KeepAlivePrefs.isEnabled(this)) {
+                    KeepAliveController.get(this).start()
+                } else {
+                    Log.d(TAG, "keep-alive disabled by preference, job is a no-op")
+                }
             } catch (e: Throwable) {
                 Log.w(TAG, "job restart failed: ${e.message}")
             } finally {

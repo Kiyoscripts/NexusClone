@@ -33,6 +33,10 @@ class KeepAliveReceiver : BroadcastReceiver() {
                 //   am_anr: Broadcast of Intent { act=..KEEPALIVE_PULSE .. }
                 // Only the service start belongs here; the scheduling layers are re-armed
                 // by the service itself once it is running.
+                if (!KeepAlivePrefs.isEnabled(context)) {
+                    Log.d(TAG, "keep-alive disabled by preference, ignoring $action")
+                    return
+                }
                 try {
                     KeepAliveService.start(context)
                 } catch (e: Exception) {
