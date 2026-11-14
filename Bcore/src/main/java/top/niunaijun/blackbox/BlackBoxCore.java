@@ -1612,37 +1612,58 @@ public class BlackBoxCore extends ClientConfiguration {
     }
     
     /**
-     * Initialize VPN service for internet access
+     * Initialize VPN service for internet access.
+     *
+     * This is deliberately conservative. Starting ProxyVpnService without the user
+     * having granted VPN consent is worse than not starting it at all:
+     *
+     *  - VpnService.prepare() returns a non-null Intent until consent is granted, and
+     *    Builder.establish() then returns null, so the tunnel never comes up anyway
+     *    (observed: "Failed to establish VPN interface - builder.establish() returned null").
+     *  - The startForegroundService() call still creates a ServiceRecord, and if the
+     *    main thread is busy the service never reaches startForeground() within the
+     *    5 second window. The framework then raises
+     *    "Context.startForegroundService() did not then call Service.startForeground()"
+     *    and kills the whole host process with a background ANR.
+     *
+     * So: only start it when consent already exists. Otherwise skip silently and let
+     * the app run without the tunnel, which is the documented fallback.
      */
     private void initVpnService() {
         try {
-            // Start the VPN service asynchronously to prevent blocking main thread
+            final android.content.Context ctx = getContext();
+            if (ctx == null) {
+                return;
+            }
+
+            // Non-null means consent has not been granted yet. Do not start the service.
+            if (android.net.VpnService.prepare(ctx) != null) {
+                Slog.d(TAG, "VPN consent not granted, skipping VPN service start");
+                return;
+            }
+
             new Thread(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        // Start the VPN service to ensure internet access works
-                        Intent vpnIntent = new Intent(getContext(), top.niunaijun.blackbox.proxy.ProxyVpnService.class);
+                        Intent vpnIntent = new Intent(ctx, top.niunaijun.blackbox.proxy.ProxyVpnService.class);
                         vpnIntent.setAction("android.net.VpnService");
-                        
+
                         if (BuildCompat.isOreo()) {
-                            getContext().startForegroundService(vpnIntent);
+                            ctx.startForegroundService(vpnIntent);
                         } else {
-                            getContext().startService(vpnIntent);
+                            ctx.startService(vpnIntent);
                         }
-                        
+
                         Slog.d(TAG, "VPN service started successfully for internet access");
                     } catch (Exception e) {
                         Slog.w(TAG, "Failed to start VPN service: " + e.getMessage());
-                        // Don't fail initialization if VPN service fails
-                        // The app can still work without VPN, just with limited network access
                     }
                 }
             }, "VPNServiceInit").start();
-            
+
         } catch (Exception e) {
             Slog.w(TAG, "Failed to initialize VPN service: " + e.getMessage());
-            // Don't fail initialization if VPN service fails
         }
     }
     

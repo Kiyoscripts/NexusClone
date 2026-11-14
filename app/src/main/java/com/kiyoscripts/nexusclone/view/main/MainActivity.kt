@@ -123,13 +123,17 @@ class MainActivity : LoadingActivity() {
 
     private fun initViewPager() {
         try {
-            val userList = BlackBoxCore.get().users
-            userList.forEach {
-                fragmentList.add(AppsFragment.newInstance(it.id))
-            }
-
-            currentUser = userList.firstOrNull()?.id ?: 0
-            fragmentList.add(AppsFragment.newInstance(userList.size))
+            // BlackBoxCore.get().users is a synchronous binder round-trip into the :black
+            // engine process. Calling it here, on the main thread inside onCreate, is what
+            // kept the window at isReadyForDisplay()=false: while the engine was still
+            // publishing its provider the call blocked, onCreate never returned, and the
+            // framework eventually ANR'd the process.
+            //
+            // Build the pager with a single default page immediately so the window can
+            // draw, then swap in the real user list once the engine answers.
+            val initialUser = 0
+            fragmentList.add(AppsFragment.newInstance(initialUser))
+            currentUser = initialUser
 
             mViewPagerAdapter = ViewPagerAdapter(this)
             mViewPagerAdapter.replaceData(fragmentList)
@@ -148,9 +152,46 @@ class MainActivity : LoadingActivity() {
                     }
                 }
             })
+
+            loadUsersAsync()
         } catch (e: Exception) {
             Log.e(TAG, "Error in initViewPager: ${e.message}")
         }
+    }
+
+    /**
+     * Resolve the virtual user list off the main thread and rebuild the pager if it
+     * differs from the single default page created in initViewPager().
+     */
+    private fun loadUsersAsync() {
+        Thread({
+            try {
+                val userList = BlackBoxCore.get().users
+                if (userList.isEmpty()) {
+                    return@Thread
+                }
+                runOnUiThread {
+                    try {
+                        // Build a fresh list rather than mutating fragmentList in place:
+                        // ViewPagerAdapter.replaceData() keeps a reference to the list it
+                        // was given, so clearing the original would empty the adapter's
+                        // backing store before notifyDataSetChanged() ran.
+                        val rebuilt = mutableListOf<AppsFragment>()
+                        userList.forEach { rebuilt.add(AppsFragment.newInstance(it.id)) }
+                        currentUser = userList.firstOrNull()?.id ?: 0
+                        rebuilt.add(AppsFragment.newInstance(userList.size))
+                        fragmentList.clear()
+                        fragmentList.addAll(rebuilt)
+                        mViewPagerAdapter.replaceData(rebuilt)
+                        viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error applying user list: ${e.message}")
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "failed to load virtual users: ${e.message}")
+            }
+        }, "nexus-load-users").start()
     }
 
     private fun initFab() {
