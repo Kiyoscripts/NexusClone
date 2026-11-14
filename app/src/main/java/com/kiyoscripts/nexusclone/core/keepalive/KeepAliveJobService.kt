@@ -17,14 +17,22 @@ class KeepAliveJobService : JobService() {
     }
 
     override fun onStartJob(params: JobParameters?): Boolean {
-        try {
-            KeepAliveController.get(this).start()
-        } catch (e: Exception) {
-            Log.w(TAG, "job restart failed: ${e.message}")
-        }
-        // Work is done synchronously; nothing to reschedule.
-        jobFinished(params, false)
-        return false
+        // onStartJob runs on the main thread and the framework times it. Calling
+        // KeepAliveController.start() here also arms AlarmManager and JobScheduler, which
+        // was enough to produce
+        //   am_anr: executing service .. KeepAliveJobService
+        // Do the work on a worker and report completion from there.
+        Thread({
+            try {
+                KeepAliveController.get(this).start()
+            } catch (e: Throwable) {
+                Log.w(TAG, "job restart failed: ${e.message}")
+            } finally {
+                jobFinished(params, false)
+            }
+        }, "nexus-keepalive-job").start()
+        // Returning true means work is still in progress; jobFinished() above ends it.
+        return true
     }
 
     override fun onStopJob(params: JobParameters?): Boolean = true
