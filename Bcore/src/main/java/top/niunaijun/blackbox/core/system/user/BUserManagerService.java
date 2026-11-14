@@ -19,6 +19,7 @@ import top.niunaijun.blackbox.core.system.ISystemService;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.utils.CloseUtils;
 import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.Slog;
 
 /**
  * updated by alex5402 on 4/22/21.
@@ -29,6 +30,7 @@ import top.niunaijun.blackbox.utils.FileUtils;
  * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
  */
 public class BUserManagerService extends IBUserManagerService.Stub implements ISystemService {
+    private static final String TAG = "BUserManagerService";
     private static BUserManagerService sService = new BUserManagerService();
     public final HashMap<Integer, BUserInfo> mUsers = new HashMap<>();
     public final Object mUserLock = new Object();
@@ -40,6 +42,13 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
     @Override
     public void systemReady() {
         scanUserL();
+        if (!exists(0)) {
+            try {
+                createUser(0);
+            } catch (Exception e) {
+                Slog.e(TAG, "failed to seed user 0", e);
+            }
+        }
     }
 
     @Override

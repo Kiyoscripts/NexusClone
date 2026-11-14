@@ -57,8 +57,8 @@ class InstancesActivity : AppCompatActivity() {
         binding.recycler.adapter = adapter
 
         binding.fab.setOnClickListener {
-            // Cloning starts from the app list; this is the shortcut into it.
-            startActivity(Intent(this, com.kiyoscripts.nexusclone.view.main.MainActivity::class.java))
+            // The app picker lives in ListActivity; cloning starts from there.
+            startActivity(Intent(this, com.kiyoscripts.nexusclone.view.list.ListActivity::class.java))
         }
 
         lifecycleScope.launch {
