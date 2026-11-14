@@ -914,10 +914,17 @@ public class BlackBoxCore extends ClientConfiguration {
                     // Check if we're in a valid state to start services
                     if (!isValidProcessState()) {
                         Slog.w(TAG, "Server process state is invalid, delaying service start");
-                        // Schedule a delayed retry for server process
+                        // Schedule a delayed retry for server process.
+                        //
+                        // Do NOT return here. isValidProcessState() requires
+                        // isMainProcess(), and this branch only runs when we are NOT the
+                        // main process, so it always returns false. Returning skipped the
+                        // rest of doAttachBaseContext() — including HookManager.init() —
+                        // which meant the engine published a provider with no proxies
+                        // installed at all. Fall through and let the delayed retry handle
+                        // the daemon service separately.
                         scheduleDelayedServerServiceStart();
-                        return;
-                    }
+                    } else {
                     
                     Intent intent = new Intent();
                     intent.setClass(getContext(), DaemonService.class);
@@ -982,7 +989,8 @@ public class BlackBoxCore extends ClientConfiguration {
                         // Try alternative startup methods for server process
                         tryAlternativeServerStartupMethods();
                     }
-                    
+                    } // end else (valid process state)
+
                 } catch (Exception e) {
                     Slog.e(TAG, "Unexpected error starting DaemonService in server process: " + e.getMessage(), e);
                     // Schedule a delayed retry
