@@ -42,6 +42,27 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
     @Override
     public void systemReady() {
         scanUserL();
+        // Seed the default user in memory only.
+        //
+        // scanUserL() returns early when userinfo.conf is absent, so a fresh install has
+        // no users at all and getUsers() returns an empty list, which leaves the app grid
+        // blank. createUserLocked() is deliberately NOT used here: it calls
+        // saveUserInfoLocked(), which does an AtomicFile write (open, write, fsync,
+        // rename). This method runs from SystemCallProvider.onCreate(), and the framework
+        // kills a provider that has not published within 10 seconds
+        // ("timeout publishing content providers"), so a disk write here is fatal.
+        //
+        // Putting the entry straight into the map keeps publish fast. The record is
+        // persisted the first time anything actually creates a user, and a missing
+        // userinfo.conf simply means the seed runs again on the next boot.
+        synchronized (mUserLock) {
+            if (!mUsers.containsKey(0)) {
+                BUserInfo bUserInfo = new BUserInfo();
+                bUserInfo.id = 0;
+                bUserInfo.status = BUserStatus.ENABLE;
+                mUsers.put(0, bUserInfo);
+            }
+        }
     }
 
     @Override

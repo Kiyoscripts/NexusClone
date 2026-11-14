@@ -83,25 +83,10 @@ class App : Application() {
 
         // Seed the default virtual user before any Activity exists.
         //
-        // The engine never creates user 0 on a fresh install: BUserManagerService
-        // .systemReady() only calls scanUserL(), which returns early when userinfo.conf
-        // is absent, so getUsers() stays empty and the app grid renders blank.
-        //
-        // This must be synchronous and must happen here, not on a background thread.
-        // createUser() persists through AtomicFile (open, write, fsync, rename) inside
-        // the :black process. MainActivity.initViewPager() then calls getUsers(), which
-        // is a binder call to that same service. When the seed ran on a worker thread,
-        // the UI's getUsers() queued behind the fsync, onCreate never returned, and the
-        // window sat at isReadyForDisplay()=false with a black screen. Doing the write
-        // once here, before the first Activity is created, means every later getUsers()
-        // is a fast read of an already-populated map.
-        try {
-            if (BlackBoxCore.get().users.isEmpty()) {
-                BlackBoxCore.get().createUser(0)
-                Log.i("App", "seeded virtual user 0")
-            }
-        } catch (e: Throwable) {
-            Log.w("App", "failed to seed virtual user 0: ${e.message}")
-        }
+        // The engine seeds user 0 itself in BUserManagerService.systemReady(), in memory
+        // and without a disk write, so nothing is needed here. Do NOT call into the
+        // engine from Application.onCreate: at this point the :black provider has not
+        // been published yet, so any getUsers()/createUser() call blocks on provider
+        // startup and the first Activity never gets a chance to draw.
     }
 }
