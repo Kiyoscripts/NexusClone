@@ -994,26 +994,7 @@ public class BlackBoxCore extends ClientConfiguration {
         // Initialize VPN service for internet access
         initVpnService();
 
-        // HookManager.init() reflects over ~34 system services and installs proxies.
-        // In the :black process this runs from SystemCallProvider.onCreate(), which the
-        // framework kills after 10 seconds ("timeout publishing content providers").
-        // Doing it inline pushed publish past that deadline, the engine process died,
-        // and the host then blocked on a binder call to the dead process, so
-        // ProxyVpnService never reached startForeground() and the UI ANR'd black.
-        //
-        // Publish the provider first, then hook. The hooks are only needed once a guest
-        // actually runs, which cannot happen before the provider is up.
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    HookManager.get().init();
-                    Slog.d(TAG, "HookManager initialized off the provider-publish path");
-                } catch (Throwable t) {
-                    Slog.e(TAG, "HookManager init failed", t);
-                }
-            }
-        }, "nexus-hook-init").start();
+        HookManager.get().init();
     }
 
     public void doCreate() {
