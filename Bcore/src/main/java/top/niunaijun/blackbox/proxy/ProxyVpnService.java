@@ -36,34 +36,56 @@ public class ProxyVpnService extends VpnService {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Slog.d(TAG, "ProxyVpnService started");
-        
+
+        // startForeground() must be reached on every path, or the framework raises
+        // "Context.startForegroundService() did not then call Service.startForeground()"
+        // and kills the host process with a background ANR. The notification build can
+        // throw on OEM ROMs (missing channel, restricted icon), so it is guarded and a
+        // minimal fallback notification is used rather than letting the exception skip
+        // the call entirely.
         try {
-            // CRITICAL: Start foreground immediately to prevent timeout
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // Android 14+ requires foreground service type
-                startForeground(NOTIFICATION_ID, createNotification(), 
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
-            } else {
-                startForeground(NOTIFICATION_ID, createNotification());
+            Notification notification;
+            try {
+                notification = createNotification();
+            } catch (Throwable t) {
+                Slog.w(TAG, "createNotification failed, using fallback: " + t.getMessage());
+                // On API 26+ a builder without a valid channel throws at build(), so the
+                // fallback must reuse the channel created in onCreate().
+                Notification.Builder fb = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? new Notification.Builder(this, CHANNEL_ID)
+                        : new Notification.Builder(this);
+                notification = fb.setContentTitle("BlackBox")
+                        .setSmallIcon(android.R.drawable.ic_dialog_info)
+                        .build();
             }
-            
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification,
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
             Slog.d(TAG, "Foreground service started successfully");
-            
-            // Start VPN establishment in background to prevent blocking
+        } catch (Throwable t) {
+            // Even if the notification path is unusable, the service must not leave the
+            // framework waiting. Stop cleanly instead of hanging the host.
+            Slog.e(TAG, "startForeground failed, stopping service: " + t.getMessage(), t);
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
+        // Start VPN establishment in background to prevent blocking
+        try {
             new Thread(new Runnable() {
                 @Override
                 public void run() {
                     establishVpn();
                 }
             }, "VPNEstablishment").start();
-            
-        } catch (Exception e) {
-            Slog.e(TAG, "Critical error in onStartCommand: " + e.getMessage(), e);
-            // If we can't start foreground, stop the service to prevent hanging
-            stopSelf();
-            return START_NOT_STICKY;
+        } catch (Throwable t) {
+            Slog.w(TAG, "failed to start VPN establishment thread: " + t.getMessage());
         }
-        
+
         return START_STICKY;
     }
 
