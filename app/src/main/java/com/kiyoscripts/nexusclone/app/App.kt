@@ -75,10 +75,19 @@ class App : Application() {
 
         // Anchor the host process so warm clones survive backgrounding. Failure here is
         // non-fatal: the app still works, clones just get killed sooner.
+        //
+        // Do NOT start the foreground service from Application.onCreate(). On Android 12+
+        // that is a background start, and startForegroundService() then throws
+        // ForegroundServiceStartNotAllowedException inside the service, leaving fgRequired
+        // set and producing:
+        //   Context.startForegroundService() did not then call Service.startForeground()
+        //   ServiceRecord{.. KeepAliveService}
+        // which ANRs and kills the host. Only the scheduling layers are safe here; the
+        // service itself is started once an Activity is actually visible.
         try {
-            KeepAliveController.get(this).start()
+            KeepAliveController.get(this).scheduleOnly()
         } catch (e: Exception) {
-            Log.w("App", "keep-alive start failed: ${e.message}")
+            Log.w("App", "keep-alive scheduling failed: ${e.message}")
         }
 
         // Seed the default virtual user before any Activity exists.

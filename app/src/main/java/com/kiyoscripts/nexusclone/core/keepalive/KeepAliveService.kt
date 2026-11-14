@@ -100,7 +100,26 @@ class KeepAliveService : Service() {
                 startForeground(NOTIFY_ID, notification)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "startForeground failed: ${e.message}")
+            // Swallowing this does NOT satisfy the contract. startForeground() is final
+            // and already swallows RemoteException internally, so anything reaching here
+            // is the framework deliberately signalling a violation:
+            // ForegroundServiceStartNotAllowedException (Android 12 background-start
+            // restriction) or IllegalArgumentException for a type not covered by the
+            // manifest. fgRequired stays true and the 10 second timer still fires, which
+            // is exactly the ANR observed on the vivo:
+            //   Context.startForegroundService() did not then call
+            //   Service.startForeground(): ServiceRecord{.. KeepAliveService}
+            //
+            // Retry with a bare Notification that cannot fail, so the contract is met.
+            Log.w(TAG, "startForeground failed, retrying with minimal notification: ${e.message}")
+            try {
+                val fallback = android.app.Notification()
+                fallback.icon = android.R.drawable.ic_dialog_info
+                fallback.when = System.currentTimeMillis()
+                startForeground(NOTIFY_ID, fallback)
+            } catch (t: Throwable) {
+                Log.e(TAG, "fallback startForeground also failed: ${t.message}")
+            }
         }
     }
 

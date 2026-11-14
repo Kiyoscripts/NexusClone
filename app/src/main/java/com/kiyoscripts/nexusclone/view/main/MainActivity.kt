@@ -19,6 +19,7 @@ import com.kiyoscripts.nexusclone.app.AppManager
 import com.kiyoscripts.nexusclone.databinding.ActivityMainBinding
 import com.kiyoscripts.nexusclone.util.Resolution
 import com.kiyoscripts.nexusclone.util.inflate
+import com.kiyoscripts.nexusclone.core.keepalive.KeepAliveController
 import com.kiyoscripts.nexusclone.view.apps.AppsFragment
 import com.kiyoscripts.nexusclone.view.base.LoadingActivity
 import com.kiyoscripts.nexusclone.view.fake.FakeManagerActivity
@@ -118,6 +119,18 @@ class MainActivity : LoadingActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in initToolbarSubTitle: ${e.message}")
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Start the keep-alive service here, not in Application.onCreate(). By the time
+        // an Activity is resumed the app is foreground, so startForegroundService() is
+        // permitted on Android 12+ and the service can reach startForeground() in time.
+        try {
+            KeepAliveController.get(this).start()
+        } catch (e: Exception) {
+            Log.w(TAG, "keep-alive start failed: ${e.message}")
         }
     }
 

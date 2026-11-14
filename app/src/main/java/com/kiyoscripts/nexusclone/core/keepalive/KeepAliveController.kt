@@ -73,6 +73,19 @@ class KeepAliveController private constructor(private val context: Context) {
         scheduleJob()
     }
 
+    /**
+     * Schedule the resurrection layers without starting the foreground service.
+     *
+     * Safe to call from Application.onCreate(). Starting the service there is a
+     * background start on Android 12+, which throws
+     * ForegroundServiceStartNotAllowedException inside the service and leaves the
+     * framework waiting for startForeground(), producing an ANR.
+     */
+    fun scheduleOnly() {
+        schedulePulse()
+        scheduleJob()
+    }
+
     fun stop() {
         KeepAliveService.stop(context)
         cancelPulse()
