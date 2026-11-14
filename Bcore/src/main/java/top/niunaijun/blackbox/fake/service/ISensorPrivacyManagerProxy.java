@@ -24,35 +24,47 @@ public class ISensorPrivacyManagerProxy extends BinderInvocationStub {
     @Override
     protected Object getWho() {
         try {
-            // Try multiple reflection paths for different Android versions
+            // Resolve the binder ONCE. The previous version called
+            // BRServiceManager.get().getService("sensor_privacy") inside every fallback
+            // branch, so a failing lookup was retried three times, each a binder round
+            // trip to servicemanager. Combined with the reflection fallbacks this proxy
+            // alone consumed ~13 seconds of the 10 second provider-publish budget, which
+            // is what got the :black process killed with
+            // "timeout publishing content providers".
+            android.os.IBinder binder = BRServiceManager.get().getService("sensor_privacy");
+            if (binder == null) {
+                Slog.d(TAG, "sensor_privacy service not present, skipping");
+                return null;
+            }
+
             Object stub = null;
-            
+
             // Android 16+ path
             try {
                 stub = Reflector.on("android.hardware.ISensorPrivacyManager$Stub")
-                        .call("asInterface", BRServiceManager.get().getService("sensor_privacy"));
+                        .call("asInterface", binder);
             } catch (Exception e1) {
                 Slog.d(TAG, "Failed Android 16+ path, trying alternative: " + e1.getMessage());
-                
+
                 // Alternative path for older versions
                 try {
                     stub = Reflector.on("android.hardware.ISensorPrivacyManager")
-                            .call("asInterface", BRServiceManager.get().getService("sensor_privacy"));
+                            .call("asInterface", binder);
                 } catch (Exception e2) {
                     Slog.d(TAG, "Failed alternative path: " + e2.getMessage());
-                    
+
                     // Last resort: try direct interface casting
                     try {
                         Class<?> stubClass = Class.forName("android.hardware.ISensorPrivacyManager$Stub");
                         Method asInterfaceMethod = stubClass.getMethod("asInterface", android.os.IBinder.class);
-                        stub = asInterfaceMethod.invoke(null, BRServiceManager.get().getService("sensor_privacy"));
+                        stub = asInterfaceMethod.invoke(null, binder);
                     } catch (Exception e3) {
                         Slog.e(TAG, "All reflection paths failed for ISensorPrivacyManager", e3);
                         return null;
                     }
                 }
             }
-            
+
             if (stub != null) {
                 Slog.d(TAG, "Successfully obtained ISensorPrivacyManager interface");
                 return (IInterface) stub;
@@ -60,7 +72,7 @@ public class ISensorPrivacyManagerProxy extends BinderInvocationStub {
                 Slog.e(TAG, "Reflection succeeded but returned null interface");
                 return null;
             }
-            
+
         } catch (Exception e) {
             Slog.e(TAG, "Failed to get ISensorPrivacyManager interface", e);
             return null;

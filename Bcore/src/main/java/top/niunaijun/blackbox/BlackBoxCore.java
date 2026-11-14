@@ -994,7 +994,30 @@ public class BlackBoxCore extends ClientConfiguration {
         // Initialize VPN service for internet access
         initVpnService();
 
-        HookManager.get().init();
+        // HookManager.init() walks ~80 stubs and installs proxies. In the :black process
+        // this method is reached from SystemCallProvider.onCreate(), and the framework
+        // kills a provider that has not published within 10 seconds:
+        //
+        //   am_kill: [.., nexusclone:black, 0, timeout publishing content providers]
+        //
+        // Measured on a vivo V2032 / Android 12, hooking alone took ~13 seconds, so the
+        // provider never published and the engine process died. The host then blocked on
+        // a binder call to the dead process, which is what produced the black screen and
+        // the ProxyVpnService ANR.
+        //
+        // Publish first, hook second. The hooks are only needed once a guest actually
+        // runs, and no guest can run before the provider is up.
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    HookManager.get().init();
+                    Slog.d(TAG, "HookManager initialized after provider publish");
+                } catch (Throwable t) {
+                    Slog.e(TAG, "HookManager init failed", t);
+                }
+            }
+        }, "nexus-hook-init").start();
     }
 
     public void doCreate() {
