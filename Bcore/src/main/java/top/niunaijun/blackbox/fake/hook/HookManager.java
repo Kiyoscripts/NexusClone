@@ -258,9 +258,13 @@ public class HookManager {
             try {
                 Slog.d(TAG, "hook: " + value);
                 value.injectHook();
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                // Catch Throwable, not Exception. On SDK 31 a stub can fail with
+                // NoClassDefFoundError or ExceptionInInitializerError (a service class
+                // that moved or was removed), and those are Errors. Catching only
+                // Exception let one such failure abort the whole loop, leaving every
+                // remaining stub unhooked.
                 Slog.d(TAG, "hook error: " + value);
-                // Enhanced error handling for critical hooks
                 handleHookError(value, e);
             }
         }
@@ -269,7 +273,7 @@ public class HookManager {
     /**
      * Enhanced error handling for hook failures
      */
-    private void handleHookError(IInjectHook hook, Exception e) {
+    private void handleHookError(IInjectHook hook, Throwable e) {
         String hookName = hook.getClass().getSimpleName();
         
         // Log the error with more details

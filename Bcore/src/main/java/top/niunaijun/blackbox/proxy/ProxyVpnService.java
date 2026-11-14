@@ -67,11 +67,27 @@ public class ProxyVpnService extends VpnService {
             }
             Slog.d(TAG, "Foreground service started successfully");
         } catch (Throwable t) {
-            // Even if the notification path is unusable, the service must not leave the
-            // framework waiting. Stop cleanly instead of hanging the host.
-            Slog.e(TAG, "startForeground failed, stopping service: " + t.getMessage(), t);
-            stopSelf();
-            return START_NOT_STICKY;
+            // Do NOT call stopSelf() here. When a service was started with
+            // startForegroundService(), the framework sets fgRequired and arms a 10 second
+            // timer. ActiveServices.bringDownServiceLocked() posts
+            // SERVICE_FOREGROUND_CRASH_MSG for any service that is brought down while
+            // fgRequired is still true, so stopping ourselves IS the crash path, not a
+            // way to avoid it.
+            //
+            // The only safe move is to satisfy the contract with a notification that
+            // cannot fail: no channel lookup, no custom icon, no builder that can throw.
+            Slog.e(TAG, "startForeground failed, retrying with minimal notification: " + t.getMessage(), t);
+            try {
+                Notification fallback = new Notification();
+                fallback.icon = android.R.drawable.ic_dialog_info;
+                fallback.when = System.currentTimeMillis();
+                startForeground(NOTIFICATION_ID, fallback);
+                Slog.d(TAG, "Foreground service started with fallback notification");
+            } catch (Throwable t2) {
+                // Nothing further can be done from here; let the framework decide.
+                Slog.e(TAG, "fallback startForeground also failed: " + t2.getMessage(), t2);
+                return START_NOT_STICKY;
+            }
         }
 
         // Start VPN establishment in background to prevent blocking

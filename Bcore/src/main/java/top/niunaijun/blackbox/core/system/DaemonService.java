@@ -54,8 +54,20 @@ public class DaemonService extends Service {
             // Start foreground service for Android 8.0+
             if (BuildCompat.isOreo()) {
                 if (!startForegroundService()) {
-                    Log.w(TAG, "Failed to start foreground service, falling back to regular service");
-                    return START_STICKY;
+                    // Returning without having called startForeground() leaves fgRequired
+                    // set, and the framework then raises
+                    // "Context.startForegroundService() did not then call
+                    // Service.startForeground()" and ANRs the host. Retry with a
+                    // notification that cannot fail before giving up.
+                    Log.w(TAG, "Failed to start foreground service, retrying with minimal notification");
+                    try {
+                        Notification fallback = new Notification();
+                        fallback.icon = android.R.drawable.ic_dialog_info;
+                        fallback.when = System.currentTimeMillis();
+                        startForeground(NOTIFY_ID, fallback);
+                    } catch (Throwable t) {
+                        Log.e(TAG, "fallback startForeground failed: " + t.getMessage(), t);
+                    }
                 }
             }
             
@@ -64,7 +76,18 @@ public class DaemonService extends Service {
             
         } catch (Exception e) {
             Log.e(TAG, "Error starting DaemonService: " + e.getMessage(), e);
-            // Return START_STICKY to allow the system to restart the service
+            // Same contract as above: never return from onStartCommand after a
+            // startForegroundService() without having called startForeground().
+            if (BuildCompat.isOreo()) {
+                try {
+                    Notification fallback = new Notification();
+                    fallback.icon = android.R.drawable.ic_dialog_info;
+                    fallback.when = System.currentTimeMillis();
+                    startForeground(NOTIFY_ID, fallback);
+                } catch (Throwable t) {
+                    Log.e(TAG, "fallback startForeground failed: " + t.getMessage(), t);
+                }
+            }
             return START_STICKY;
         }
     }

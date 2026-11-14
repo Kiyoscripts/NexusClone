@@ -210,12 +210,22 @@ class KeepAliveController private constructor(private val context: Context) {
             ComponentName(context, KeepAliveJobService::class.java)
         )
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
-            .setPersisted(true)
-            .setMinimumLatency(PULSE_INTERVAL_MS)
 
+        // JobInfo.build() rejects an expedited job that also carries a time constraint:
+        //   IllegalArgumentException("An expedited job cannot have a time delay")
+        // setMinimumLatency() sets hasEarlyConstraint, so combining it with
+        // setExpedited(true) threw on every API 31+ device and the job was never
+        // scheduled at all. The exception was swallowed by the catch below, so this
+        // whole keep-alive layer silently did nothing.
+        //
+        // Expedited jobs run as soon as possible by definition, so the latency is
+        // dropped on the expedited path and kept on the legacy path.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setExpedited(true)
+        } else {
+            builder.setMinimumLatency(PULSE_INTERVAL_MS)
         }
+
         try {
             js.schedule(builder.build())
         } catch (e: Exception) {
