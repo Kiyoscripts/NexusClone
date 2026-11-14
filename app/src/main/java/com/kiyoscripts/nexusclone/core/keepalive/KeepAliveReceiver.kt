@@ -26,8 +26,15 @@ class KeepAliveReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
             "android.intent.action.QUICKBOOT_POWERON" -> {
+                // onReceive runs on the main thread with a hard deadline (10s for a
+                // foreground broadcast, less under load). KeepAliveController.start()
+                // also arms AlarmManager and JobScheduler, which is enough work to
+                // produce
+                //   am_anr: Broadcast of Intent { act=..KEEPALIVE_PULSE .. }
+                // Only the service start belongs here; the scheduling layers are re-armed
+                // by the service itself once it is running.
                 try {
-                    KeepAliveController.get(context).start()
+                    KeepAliveService.start(context)
                 } catch (e: Exception) {
                     Log.w(TAG, "restart failed: ${e.message}")
                 }

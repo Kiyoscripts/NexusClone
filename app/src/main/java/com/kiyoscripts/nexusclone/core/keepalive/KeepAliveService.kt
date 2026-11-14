@@ -86,7 +86,18 @@ class KeepAliveService : Service() {
             }
             else -> {
                 startForegroundCompat()
-                KeepAliveController.get(this).onServiceStarted()
+                // onServiceStarted() arms the alarm and job layers, which touch
+                // AlarmManager and JobScheduler. Doing that inline here runs on the main
+                // thread while the framework is timing service execution, and produced
+                //   am_anr: executing service .. KeepAliveService
+                // Hand it to a worker so onStartCommand returns immediately.
+                Thread({
+                    try {
+                        KeepAliveController.get(this).onServiceStarted()
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "onServiceStarted failed: ${e.message}")
+                    }
+                }, "nexus-keepalive-schedule").start()
             }
         }
         // START_STICKY: the system restarts us after a low-memory kill.
