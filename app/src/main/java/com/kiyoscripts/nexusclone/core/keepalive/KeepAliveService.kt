@@ -115,7 +115,7 @@ class KeepAliveService : Service() {
             try {
                 val fallback = android.app.Notification()
                 fallback.icon = android.R.drawable.ic_dialog_info
-                fallback.when = System.currentTimeMillis()
+                fallback.`when` = System.currentTimeMillis()
                 startForeground(NOTIFY_ID, fallback)
             } catch (t: Throwable) {
                 Log.e(TAG, "fallback startForeground also failed: ${t.message}")
