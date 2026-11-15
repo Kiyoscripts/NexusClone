@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup / adb backup rules for API 30 and below.
+
+  Referenced by android:fullBackupContent in AndroidManifest.xml. The API 31+ equivalent
+  is data_extraction_rules.xml; both must be declared, because fullBackupContent is
+  ignored from API 31 and dataExtractionRules is ignored below it.
+
+  What is excluded and why:
+    nexus_proxy.db      proxy username/password, stored as plaintext TEXT columns
+                        (ProxyStore.kt). Cloud backup would ship them off-device.
+    nexus_identity.db   IMEI, MEID, Wi-Fi MAC, serial, android_id, GSF id
+                        (IdentityStore.kt). Device identifiers, not user content.
+    nexus_instances.db  the clone inventory: which apps are cloned, their labels and
+                        their proxy/identity bindings (InstanceStore.kt). Metadata about
+                        the user's app usage, and restoring it on another device would
+                        produce rows pointing at virtual users and APKs that do not exist
+                        there, so it is not worth carrying either.
+
+  nexus_macros.db is deliberately left in: recorded touch macros are user content with no
+  credentials in them.
+
+  Follow-up, not done here: the guest data itself lives under <data>/blackbox (see
+  BEnvironment.sVirtualRoot), which is in the "file" domain and is therefore still backed
+  up. That is a size and privacy question of its own and needs its own decision.
+
+  The -journal/-wal/-shm siblings are listed because SQLite may leave them behind and a
+  backup taken mid-transaction would otherwise carry the same rows in a side file.
+-->
+<full-backup-content>
+    <exclude domain="database" path="nexus_proxy.db" />
+    <exclude domain="database" path="nexus_proxy.db-journal" />
+    <exclude domain="database" path="nexus_proxy.db-wal" />
+    <exclude domain="database" path="nexus_proxy.db-shm" />
+
+    <exclude domain="database" path="nexus_identity.db" />
+    <exclude domain="database" path="nexus_identity.db-journal" />
+    <exclude domain="database" path="nexus_identity.db-wal" />
+    <exclude domain="database" path="nexus_identity.db-shm" />
+
+    <exclude domain="database" path="nexus_instances.db" />
+    <exclude domain="database" path="nexus_instances.db-journal" />
+    <exclude domain="database" path="nexus_instances.db-wal" />
+    <exclude domain="database" path="nexus_instances.db-shm" />
+</full-backup-content>

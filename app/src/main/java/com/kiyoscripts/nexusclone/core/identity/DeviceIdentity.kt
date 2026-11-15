@@ -45,6 +45,39 @@ data class DeviceIdentity(
         "FINGERPRINT" to fingerprint,
         "SERIAL" to serial
     )
+
+    /**
+     * The same identity as Android system property name / value pairs.
+     *
+     * This is the form the native property hook consumes. The names are the ones
+     * {@code VirtualSpoof.cpp} intercepts, so a clone that binds this identity answers
+     * {@code __system_property_get} with its own values instead of the shared fallback.
+     */
+    fun spoofedProperties(): Map<String, String> = linkedMapOf(
+        "ro.product.brand" to brand,
+        "ro.product.manufacturer" to manufacturer,
+        "ro.product.model" to model,
+        "ro.product.device" to device,
+        "ro.product.board" to board,
+        "ro.hardware" to hardware,
+        "ro.boot.hardware" to hardware,
+        "ro.build.fingerprint" to fingerprint,
+        "ro.serialno" to serial
+    )
+
+    /**
+     * Flatten [spoofedProperties] into the alternating name/value array that
+     * {@code AppConfig.spoofedProps} carries across the process bind.
+     */
+    fun toSpoofPairs(): Array<String> {
+        val props = spoofedProperties()
+        val out = ArrayList<String>(props.size * 2)
+        for ((key, value) in props) {
+            out.add(key)
+            out.add(value)
+        }
+        return out.toTypedArray()
+    }
 }
 
 /**

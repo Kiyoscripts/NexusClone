@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.entity.AppConfig;
+import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BundleCompat;
 
 /**
@@ -23,6 +24,8 @@ import top.niunaijun.blackbox.utils.compat.BundleCompat;
  * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
  */
 public class ProxyContentProvider extends ContentProvider {
+    private static final String TAG = "ProxyContentProvider";
+
     @Override
     public boolean onCreate() {
         return false;
@@ -32,13 +35,34 @@ public class ProxyContentProvider extends ContentProvider {
     @Override
     public Bundle call(@NonNull String method, @Nullable String arg, @Nullable Bundle extras) {
         if (method.equals("_Black_|_init_process_")) {
-            assert extras != null;
+            // Defence in depth: the manifest declares this provider exported="false", but a
+            // regression there would let any app forge an AppConfig and win the init race,
+            // permanently DoSing the sandbox. Reject a positively-foreign caller.
+            if (!ProxyCallerGuard.allowBinderCall("ProxyContentProvider")) {
+                return null;
+            }
+            // `assert` is a no-op on Android, so the original null check never ran.
+            if (extras == null) {
+                Slog.w(TAG, "call: missing extras for " + method);
+                return null;
+            }
             extras.setClassLoader(AppConfig.class.getClassLoader());
             AppConfig appConfig = extras.getParcelable(AppConfig.KEY);
-            BlackBoxCore.currentActivityThread().initProcess(appConfig);
+            if (appConfig == null) {
+                Slog.w(TAG, "call: missing AppConfig for " + method);
+                return null;
+            }
+            // currentActivityThread() is documented to return null on failure; the original
+            // code dereferenced it twice, so a crafted call was a one-line remote NPE.
+            BActivityThread activityThread = BlackBoxCore.currentActivityThread();
+            if (activityThread == null) {
+                Slog.w(TAG, "call: no activity thread for " + method);
+                return null;
+            }
+            activityThread.initProcess(appConfig);
 
             Bundle bundle = new Bundle();
-            BundleCompat.putBinder(bundle, "_Black_|_client_", BlackBoxCore.currentActivityThread());
+            BundleCompat.putBinder(bundle, "_Black_|_client_", activityThread);
             return bundle;
         }
         return super.call(method, arg, extras);

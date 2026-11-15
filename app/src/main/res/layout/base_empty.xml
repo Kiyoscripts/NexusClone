@@ -5,11 +5,13 @@
         android:orientation="vertical"
         android:layout_width="match_parent" android:layout_height="match_parent">
 
+    <!-- Decorative: the TextView below carries the message, so the icon is hidden from
+         screen readers rather than given a description that would be read twice. -->
     <ImageView
             android:src="@drawable/ic_empty"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:contentDescription="TODO" />
+            android:importantForAccessibility="no" />
 
     <TextView
             android:text="@string/empty_empty"

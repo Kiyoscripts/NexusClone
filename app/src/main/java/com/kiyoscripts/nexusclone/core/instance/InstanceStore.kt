@@ -2,6 +2,7 @@ package com.kiyoscripts.nexusclone.core.instance
 
 import android.content.ContentValues
 import android.content.Context
+import android.database.sqlite.SQLiteConstraintException
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
@@ -67,12 +68,38 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX idx_pkg ON $TABLE ($COL_PKG)")
     }
 
+    /**
+     * Additive migrations only.
+     *
+     * A destructive drop is forbidden here. The virtual users, the apks installed into
+     * them and their data directories live on disk in the BlackBox root and outlive this
+     * table, so dropping the table would delete every row while the on-disk state stays
+     * behind: clones that can never be reached again. Add columns with `ALTER TABLE` and
+     * backfill them instead.
+     */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        Log.w(TAG, "onUpgrade $oldVersion -> $newVersion, recreating")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE")
-        onCreate(db)
+        Log.i(TAG, "onUpgrade $oldVersion -> $newVersion")
+        when (oldVersion) {
+            // Version 1 is the initial schema; there is nothing to migrate from it yet.
+            1 -> Unit
+            // Future versions append their step here, e.g.
+            // 2 -> db.execSQL("ALTER TABLE $TABLE ADD COLUMN ...")
+            else -> Log.w(TAG, "no migration path from $oldVersion, schema left as is")
+        }
     }
 
+    /**
+     * Insert a new row.
+     *
+     * Returns the new row id, or `-1` when the insert failed. Failure is reported as `-1`
+     * instead of an exception so callers have a single check to make: a real id is always
+     * `>= 1` because the column is AUTOINCREMENT, so `-1` can never collide with a row.
+     *
+     * The unique key `(user_id, package_name)` is enforced with
+     * [SQLiteDatabase.CONFLICT_ABORT]: a duplicate insert fails and is reported as `-1`
+     * rather than silently replacing the existing row (which would hand back a new id and
+     * destroy the previous row's data).
+     */
     fun insert(instance: CloneInstance): Long {
         val cv = ContentValues().apply {
             put(COL_USER_ID, instance.userId)
@@ -90,9 +117,14 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
             put(COL_IDENTITY, instance.identityId)
             put(COL_FROZEN, if (instance.frozen) 1 else 0)
         }
-        return writableDatabase.insertWithOnConflict(
-            TABLE, null, cv, SQLiteDatabase.CONFLICT_REPLACE
-        )
+        return try {
+            writableDatabase.insertWithOnConflict(
+                TABLE, null, cv, SQLiteDatabase.CONFLICT_ABORT
+            )
+        } catch (e: SQLiteConstraintException) {
+            Log.w(TAG, "insert ${instance.key} rejected: ${e.message}")
+            -1L
+        }
     }
 
     fun update(instance: CloneInstance): Int {

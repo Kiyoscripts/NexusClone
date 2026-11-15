@@ -126,6 +126,12 @@ public class BlackBoxCore extends ClientConfiguration {
     private boolean mServicesInitialized = false;
     private long mLastServiceInitAttempt = 0;
     private static final long SERVICE_INIT_TIMEOUT_MS = 10000; // 10 seconds
+    // Minimum gap between full service-initialisation sweeps. One sweep walks nine
+    // services and each getServiceInternal() can block on a provider call (3s timeout)
+    // plus a 1s process-start wait, so an engine that is genuinely down must not re-run
+    // the whole sweep on every getService() call. Only the retry path is throttled; a
+    // successful sweep takes the fast path below and never reaches this.
+    private static final long SERVICE_INIT_RETRY_INTERVAL_MS = 1000; // 1 second
     
     // Add callback mechanism for service availability
     private final List<Runnable> mServiceAvailableCallbacks = new ArrayList<>();
@@ -223,10 +229,35 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
 
+    /**
+     * True only when at least one engine service is actually bound in {@link #mServices}.
+     *
+     * This used to answer true unconditionally. The fallback path set
+     * {@code mServicesInitialized} after a loop whose only producer,
+     * {@link #createFallbackService(String)}, always returns null, so the map stayed empty
+     * while every caller was told the engine was ready. Diagnostics trusted that answer and
+     * printed "Container services bound - PASS" on devices with zero bound services, and
+     * {@link #getService(String)} never short-circuited, so the real failure surfaced later
+     * and further from its cause.
+     */
     public boolean areServicesAvailable() {
-        if (mServicesInitialized) {
+        // Fast path: initialised *and* holding something. mServicesInitialized on its own
+        // proves nothing, so both halves are required.
+        if (mServicesInitialized && !mServices.isEmpty()) {
             return true;
         }
+        
+        // Retry throttle. Now that "nothing bound" is reported honestly, a broken engine
+        // would otherwise re-run the full nine-service sweep on every single getService()
+        // call, and one sweep can block for seconds per service on provider timeouts. A
+        // successful sweep never reaches here, so this only paces genuine retries. The
+        // timestamp is refreshed in the finally below, so the gap is measured from the end
+        // of the sweep rather than its start.
+        long now = System.currentTimeMillis();
+        if (now - mLastServiceInitAttempt < SERVICE_INIT_RETRY_INTERVAL_MS) {
+            return !mServices.isEmpty();
+        }
+        mLastServiceInitAttempt = now;
         
         try {
             // First, try to check if the black process is running
@@ -258,11 +289,19 @@ public class BlackBoxCore extends ClientConfiguration {
                     }
                 }
                 
-                mServicesInitialized = true;
-                Slog.d(TAG, "Services initialized with fallbacks");
-                // Notify callbacks that services are available
-                notifyServiceAvailableCallbacks();
-                return true;
+                // Only claim initialisation when something was actually bound. The fallback
+                // factory returns null by design, so this loop normally binds nothing; in
+                // that case fall through to the real initialisation below instead of
+                // reporting success. The process was just started, so the provider call may
+                // well work now.
+                if (!mServices.isEmpty()) {
+                    mServicesInitialized = true;
+                    Slog.d(TAG, "Services initialized with fallbacks");
+                    // Notify callbacks that services are available
+                    notifyServiceAvailableCallbacks();
+                    return true;
+                }
+                Slog.w(TAG, "No fallback services bound, attempting real initialization");
             }
             
             // Try to initialize services normally
@@ -291,6 +330,10 @@ public class BlackBoxCore extends ClientConfiguration {
                 }
             }
             
+            if (mServices.isEmpty()) {
+                Slog.w(TAG, "Service initialization bound nothing; engine not ready");
+                return false;
+            }
             Slog.d(TAG, "Services initialized successfully");
             mServicesInitialized = true;
             // Notify callbacks that services are available
@@ -322,6 +365,10 @@ public class BlackBoxCore extends ClientConfiguration {
                     }
                 }
                 
+                if (mServices.isEmpty()) {
+                    Slog.w(TAG, "No services bound after error fallback; engine not ready");
+                    return false;
+                }
                 mServicesInitialized = true;
                 Slog.d(TAG, "Services initialized with fallbacks after error");
                 // Notify callbacks that services are available
@@ -332,8 +379,12 @@ public class BlackBoxCore extends ClientConfiguration {
                 mServicesInitialized = false;
                 return false;
             }
+        } finally {
+            // Measure the retry gap from the end of the sweep, not its start.
+            mLastServiceInitAttempt = System.currentTimeMillis();
         }
-        return true;
+        // Reached only when the normal path completed without binding anything.
+        return !mServices.isEmpty();
     }
 
     public IBinder getService(String name) {
@@ -1607,6 +1658,19 @@ public class BlackBoxCore extends ClientConfiguration {
             throw new IllegalArgumentException("ClientConfiguration is null!");
         }
 
+        if (!NativeCore.isNativeAvailable()) {
+            // libblackbox.so is missing for this ABI. Every NativeCore call would throw
+            // UnsatisfiedLinkError, which is an Error and escapes the Exception catches
+            // below, so skip the native path entirely and fall back to reflection.
+            Slog.w(TAG, "native library unavailable, skipping hidden-api and resource hooks");
+            try {
+                Reflection.unseal(context);
+            } catch (Throwable t) {
+                Slog.w(TAG, "Reflection.unseal failed: " + t.getMessage());
+            }
+            return;
+        }
+
         if(!NativeCore.disableHiddenApi()){
             try {
                 Reflection.unseal(context);
@@ -1617,7 +1681,7 @@ public class BlackBoxCore extends ClientConfiguration {
 
         try {
             NativeCore.disableResourceLoading();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Slog.w(TAG, "Failed to call native resource disabling: " + e.getMessage());
         }
         
@@ -1708,9 +1772,13 @@ public class BlackBoxCore extends ClientConfiguration {
             
             // 1. Initialize NativeCore first
             try {
-                NativeCore.init(android.os.Build.VERSION.SDK_INT);
-                Slog.d(TAG, "NativeCore initialized successfully");
-            } catch (Exception e) {
+                if (NativeCore.isNativeAvailable()) {
+                    NativeCore.init(android.os.Build.VERSION.SDK_INT);
+                    Slog.d(TAG, "NativeCore initialized successfully");
+                } else {
+                    Slog.w(TAG, "NativeCore unavailable for this ABI, skipping native init");
+                }
+            } catch (Throwable e) {
                 Slog.w(TAG, "NativeCore initialization failed: " + e.getMessage());
             }
             

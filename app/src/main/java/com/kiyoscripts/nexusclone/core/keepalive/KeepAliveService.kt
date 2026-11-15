@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.kiyoscripts.nexusclone.R
 import com.kiyoscripts.nexusclone.view.main.MainActivity
 
@@ -38,32 +39,44 @@ class KeepAliveService : Service() {
         fun start(context: Context) {
             val i = Intent(context, KeepAliveService::class.java).setAction(ACTION_START)
             try {
-                // Use startService(), not startForegroundService().
+                // startForegroundService(), not startService().
                 //
-                // startForegroundService() sets fgRequired and arms a 10 second timer. If
-                // the service cannot reach startForeground() in that window — which is
-                // what happens on Android 12 when the start is treated as a background
-                // start, or when the notification path throws — the framework raises
-                //   Context.startForegroundService() did not then call
-                //   Service.startForeground()
-                // and kills the host with a background ANR. Retrying startForeground()
-                // with a fallback notification does not help, because the exception is
-                // thrown by the framework's own permission check, not by the notification.
+                // Every caller of this method is a background context: KeepAliveReceiver
+                // runs from the ACTION_PULSE alarm and from BOOT_COMPLETED, and
+                // KeepAliveJobService runs from a JobScheduler job. On API 26+ a plain
+                // startService() from a background context throws
+                //   IllegalStateException: Not allowed to start service Intent { .. }:
+                //   app is in background
+                // which the catch below reduced to a log line, so the entire resurrection
+                // layer silently did nothing.
                 //
-                // startService() carries no such contract. The service still calls
-                // startForeground() when it can, so it is promoted to foreground normally;
-                // if that fails it simply runs as a background service instead of taking
-                // the whole process down.
-                context.startService(i)
+                // startForegroundService() is the supported way to start from the
+                // background. It sets fgRequired and arms a ~10 second timer, so the
+                // service MUST reach startForeground() inside that window or the framework
+                // raises ForegroundServiceDidNotStartInTimeException ("Context
+                // .startForegroundService() did not then call Service.startForeground()")
+                // and kills the host. KeepAliveService.onStartCommand() therefore calls
+                // startForeground() first, unconditionally, before the preference check and
+                // before any scheduling work. Do not move that call down.
+                //
+                // The Android 12 background-start restriction still applies to the
+                // foreground promotion itself, so this is only called from the paths it
+                // exempts: BOOT_COMPLETED / MY_PACKAGE_REPLACED broadcasts, an exact alarm,
+                // an expedited job, and a visible Activity (MainActivity.onResume). The
+                // battery-optimisation exemption this subsystem asks for covers the rest.
+                ContextCompat.startForegroundService(context, i)
             } catch (e: Exception) {
                 Log.w(TAG, "start failed: ${e.message}")
             }
         }
 
         fun stop(context: Context) {
-            val i = Intent(context, KeepAliveService::class.java).setAction(ACTION_STOP)
+            // stopService(), not startService(ACTION_STOP). A background context cannot
+            // start a service on API 26+ either, and the ACTION_STOP branch only tears the
+            // notification down and calls stopSelf() — which is exactly what stopService()
+            // does, without the background-start restriction.
             try {
-                context.startService(i)
+                context.stopService(Intent(context, KeepAliveService::class.java))
             } catch (e: Exception) {
                 Log.w(TAG, "stop failed: ${e.message}")
             }
@@ -78,6 +91,18 @@ class KeepAliveService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // startForeground() is the first thing that happens here, unconditionally.
+        //
+        // KeepAliveService.start() uses ContextCompat.startForegroundService(), which sets
+        // fgRequired and arms a ~10 second timer. Returning from onStartCommand without
+        // reaching startForeground() — on the disabled path, on the ACTION_STOP path, or
+        // because the preference check came first — raises
+        // ForegroundServiceDidNotStartInTimeException and the framework kills the host.
+        // So the promotion happens before the preference check, before the action dispatch
+        // and before any scheduling work; the paths that then decide to stop tear the
+        // notification back down themselves.
+        startForegroundCompat()
+
         // A sticky restart can arrive after the user turned keep-alive off. Honour the
         // preference before doing any work at all.
         if (!KeepAlivePrefs.isEnabled(this)) {
@@ -93,7 +118,6 @@ class KeepAliveService : Service() {
                 return START_NOT_STICKY
             }
             else -> {
-                startForegroundCompat()
                 // onServiceStarted() arms the alarm and job layers, which touch
                 // AlarmManager and JobScheduler. Doing that inline here runs on the main
                 // thread while the framework is timing service execution, and produced

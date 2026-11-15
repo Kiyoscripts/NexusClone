@@ -62,6 +62,18 @@ class QuotaEnforcer(private val context: Context) {
     }
 
     /**
+     * Recompute every instance's data size, then stop whatever is over quota.
+     *
+     * This is the single entry point a sweep uses: [InstanceManager.refreshSizes] is what
+     * makes [status] meaningful, because the stored size is only as fresh as the last walk.
+     * Returns the instances that were actually stopped.
+     */
+    suspend fun sweep(manager: InstanceManager): List<CloneInstance> {
+        manager.refreshSizes()
+        return enforceAll(manager)
+    }
+
+    /**
      * Stop every instance that is over its quota.
      *
      * Returns the instances that were actually stopped, so the caller can report them.

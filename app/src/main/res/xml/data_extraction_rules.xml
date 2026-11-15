@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup and device-transfer rules for API 31+.
+
+  Referenced by android:dataExtractionRules in AndroidManifest.xml. The API 30 and below
+  equivalent is backup_rules.xml (android:fullBackupContent); both must be declared.
+
+  cloud-backup and device-transfer are listed separately on purpose: excluding a file from
+  cloud backup does not exclude it from a direct device-to-device transfer, and a proxy
+  password is just as sensitive on the receiving phone as it is in Google's cloud.
+
+  Excluded, with the reason:
+    nexus_proxy.db      proxy username/password as plaintext TEXT columns (ProxyStore.kt)
+    nexus_identity.db   IMEI, MEID, Wi-Fi MAC, serial, android_id, GSF id
+                        (IdentityStore.kt)
+    nexus_instances.db  clone inventory and its proxy/identity bindings (InstanceStore.kt).
+                        Restoring it on another device would point at virtual users and
+                        APKs that do not exist there.
+
+  nexus_macros.db is intentionally not excluded: recorded touch macros are user content
+  and carry no credentials.
+
+  Follow-up, not done here: the guest data itself lives under <data>/blackbox (see
+  BEnvironment.sVirtualRoot), which is in the "file" domain and is therefore still backed
+  up. That is a size and privacy question of its own and needs its own decision.
+
+  The -journal/-wal/-shm siblings are listed because SQLite may leave them behind and a
+  backup taken mid-transaction would otherwise carry the same rows in a side file.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="nexus_proxy.db" />
+        <exclude domain="database" path="nexus_proxy.db-journal" />
+        <exclude domain="database" path="nexus_proxy.db-wal" />
+        <exclude domain="database" path="nexus_proxy.db-shm" />
+
+        <exclude domain="database" path="nexus_identity.db" />
+        <exclude domain="database" path="nexus_identity.db-journal" />
+        <exclude domain="database" path="nexus_identity.db-wal" />
+        <exclude domain="database" path="nexus_identity.db-shm" />
+
+        <exclude domain="database" path="nexus_instances.db" />
+        <exclude domain="database" path="nexus_instances.db-journal" />
+        <exclude domain="database" path="nexus_instances.db-wal" />
+        <exclude domain="database" path="nexus_instances.db-shm" />
+    </cloud-backup>
+
+    <device-transfer>
+        <exclude domain="database" path="nexus_proxy.db" />
+        <exclude domain="database" path="nexus_proxy.db-journal" />
+        <exclude domain="database" path="nexus_proxy.db-wal" />
+        <exclude domain="database" path="nexus_proxy.db-shm" />
+
+        <exclude domain="database" path="nexus_identity.db" />
+        <exclude domain="database" path="nexus_identity.db-journal" />
+        <exclude domain="database" path="nexus_identity.db-wal" />
+        <exclude domain="database" path="nexus_identity.db-shm" />
+
+        <exclude domain="database" path="nexus_instances.db" />
+        <exclude domain="database" path="nexus_instances.db-journal" />
+        <exclude domain="database" path="nexus_instances.db-wal" />
+        <exclude domain="database" path="nexus_instances.db-shm" />
+    </device-transfer>
+</data-extraction-rules>

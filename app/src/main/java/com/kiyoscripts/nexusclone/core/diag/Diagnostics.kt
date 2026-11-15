@@ -12,6 +12,7 @@ import com.kiyoscripts.nexusclone.core.instance.InstanceManager
 import com.kiyoscripts.nexusclone.core.keepalive.KeepAliveController
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.core.env.BEnvironment
+import top.niunaijun.blackbox.core.system.ServiceManager
 import java.io.File
 
 /**
@@ -39,7 +40,13 @@ class Diagnostics(private val context: Context) {
 
     private val manager = InstanceManager.get(context)
 
-    /** Run every check. Cheap enough to call on screen open. */
+    /**
+     * Run every check.
+     *
+     * Not cheap: the engine probe is a binder round-trip and the keep-alive check reaches
+     * the provider client retry loop, which can sleep for up to 2 s. Call this from a
+     * background dispatcher, never from the main thread.
+     */
     fun runAll(): List<Check> = buildList {
         add(engineServices())
         add(virtualRoot())
@@ -52,18 +59,27 @@ class Diagnostics(private val context: Context) {
     }
 
     private fun engineServices(): Check {
-        val ok = try {
-            BlackBoxCore.get().areServicesAvailable()
+        // Probe a real binder rather than trusting areServicesAvailable(). That method used
+        // to answer true unconditionally — every branch ended in `return true`, including the
+        // fallback loop whose only producer always returns null — so this row reported PASS
+        // on devices where zero services were bound, which is exactly the misdirection this
+        // screen exists to prevent.
+        //
+        // getService() is a binder round-trip into the :black process and can block on a
+        // provider timeout, so runAll() must stay off the main thread.
+        val binder = try {
+            BlackBoxCore.get().getService(ServiceManager.ACTIVITY_MANAGER)
         } catch (e: Exception) {
-            Log.w(TAG, "areServicesAvailable threw: ${e.message}")
-            false
+            Log.w(TAG, "getService(${ServiceManager.ACTIVITY_MANAGER}) threw: ${e.message}")
+            null
         }
+        val ok = binder != null
         return Check(
             "engine_services",
             "Container services bound",
             ok,
-            if (ok) "BlackBox core services are reachable"
-            else "Core services are not bound; clones cannot launch"
+            if (ok) "Probed ${ServiceManager.ACTIVITY_MANAGER}: binder bound"
+            else "Probed ${ServiceManager.ACTIVITY_MANAGER}: no binder; clones cannot launch"
         )
     }
 

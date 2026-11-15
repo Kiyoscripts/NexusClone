@@ -685,14 +685,21 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class setServiceForeground extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            // Allow foreground service promotion to proceed, and neutralize service type enforcement on Android 14+
-            // Find an int argument that represents foregroundServiceType and zero it out
-            for (int i = args.length - 1; i >= 0; i--) {
-                if (args[i] instanceof Integer) {
-                    args[i] = 0; // remove service type requirements (e.g., MICROPHONE)
-                    break;
-                }
-            }
+            // The guest's requested foregroundServiceType must not be zeroed.
+            //
+            // This used to walk the argument list backwards and set the last Integer to 0,
+            // intending to "neutralize" type enforcement. It did the opposite: the last
+            // Integer of setServiceForeground(ComponentName, IBinder, int, Notification,
+            // int, int) is foregroundServiceType, so the guest's type became
+            // FOREGROUND_SERVICE_TYPE_NONE, the framework fell back to the manifest value,
+            // and on API 34 that raises MissingForegroundServiceTypeException inside the
+            // guest's own onStartCommand and kills the guest process. The loop was also
+            // wrong for the overload without a type, where the last Integer is `flags`, so
+            // it silently corrupted the flags instead.
+            //
+            // The stub services now declare android:foregroundServiceType="specialUse", so
+            // the manifest fallback is a valid type and the guest's request can simply be
+            // passed through untouched.
             return method.invoke(who, args);
         }
     }

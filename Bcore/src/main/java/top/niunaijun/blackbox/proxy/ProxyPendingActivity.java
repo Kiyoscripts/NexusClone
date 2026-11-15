@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.proxy;
 
 import android.app.Activity;
+import android.app.Application;
 import android.content.Intent;
 import android.os.Bundle;
 
@@ -30,8 +31,19 @@ public class ProxyPendingActivity extends Activity {
         Slog.d(TAG, "ProxyPendingActivity: " + pendingActivityRecord);
         if (pendingActivityRecord.mTarget == null)
             return;
+        // Defence in depth: the manifest declares these stubs exported="false".
+        if (!ProxyCallerGuard.allowActivityLaunch(this, TAG)) {
+            return;
+        }
+        // getApplication() is documented to return null on failure; the original code
+        // dereferenced it unguarded, so a crafted intent was a one-line remote NPE.
+        Application application = BlackBoxCore.getApplication();
+        if (application == null) {
+            Slog.w(TAG, "onCreate: no application, dropping target");
+            return;
+        }
         pendingActivityRecord.mTarget.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        pendingActivityRecord.mTarget.setExtrasClassLoader(BlackBoxCore.getApplication().getClassLoader());
+        pendingActivityRecord.mTarget.setExtrasClassLoader(application.getClassLoader());
         startActivity(pendingActivityRecord.mTarget);
     }
 

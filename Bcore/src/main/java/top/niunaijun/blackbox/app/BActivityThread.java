@@ -185,6 +185,10 @@ public class BActivityThread extends IBActivityThread.Stub {
                 throw new RuntimeException("reject init process: " + appConfig.processName + ", this process is : " + this.mAppConfig.processName);
             }
             this.mAppConfig = appConfig;
+            // Install the per-clone device identity before anything in the guest can read a
+            // system property. The host resolved it from nexus_identity.db and shipped it in
+            // the AppConfig, because a guest process cannot open the host's database.
+            applySpoofedProps(appConfig);
             IBinder iBinder = asBinder();
             try {
                 iBinder.linkToDeath(new DeathRecipient() {
@@ -207,6 +211,47 @@ public class BActivityThread extends IBActivityThread.Stub {
 
     public boolean isInit() {
         return mBoundApplication != null;
+    }
+
+    /**
+     * Push the clone's device identity into the native property hook.
+     *
+     * {@code VirtualSpoof.cpp} answers {@code __system_property_get} from a compile-time
+     * table until this runs, so without it every clone reports the same fingerprint and
+     * serial. The pairs arrive as alternating name/value entries in
+     * {@link AppConfig#spoofedProps}; a null or odd-length array means no identity is bound
+     * and the native fallback stays in place.
+     *
+     * Failure here must never break guest startup: a missing native library or a malformed
+     * array degrades to the shared fallback identity, which is what the app had before.
+     */
+    private static void applySpoofedProps(AppConfig appConfig) {
+        if (appConfig == null || appConfig.spoofedProps == null) {
+            return;
+        }
+        String[] flat = appConfig.spoofedProps;
+        if (flat.length == 0 || flat.length % 2 != 0) {
+            Slog.w(TAG, "ignoring malformed spoofedProps of length " + flat.length);
+            return;
+        }
+        try {
+            if (!NativeCore.isNativeAvailable()) {
+                Slog.w(TAG, "native library unavailable, keeping fallback identity");
+                return;
+            }
+            int count = flat.length / 2;
+            String[] keys = new String[count];
+            String[] values = new String[count];
+            for (int i = 0; i < count; i++) {
+                keys[i] = flat[i * 2];
+                values[i] = flat[i * 2 + 1];
+            }
+            NativeCore.setSpoofedProps(keys, values);
+            Slog.d(TAG, "installed " + count + " spoofed properties for " + appConfig.packageName);
+        } catch (Throwable e) {
+            // UnsatisfiedLinkError is an Error, not an Exception.
+            Slog.w(TAG, "could not install spoofed properties: " + e.getMessage());
+        }
     }
 
     public Service createService(ServiceInfo serviceInfo, IBinder token) {
@@ -408,7 +453,11 @@ public class BActivityThread extends IBActivityThread.Stub {
             BRCompatibility.get().setTargetSdkVersion(applicationInfo.targetSdkVersion);
         }
 
-        NativeCore.init(Build.VERSION.SDK_INT);
+        if (NativeCore.isNativeAvailable()) {
+            NativeCore.init(Build.VERSION.SDK_INT);
+        } else {
+            Slog.w(TAG, "NativeCore unavailable for this ABI, skipping native init");
+        }
         assert packageContext != null;
         IOCore.get().enableRedirect(packageContext);
 
@@ -1085,7 +1134,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             } catch (Throwable ignored) {
             }
         }
-        if (BlackBoxCore.get().isHideXposed()) {
+        if (BlackBoxCore.get().isHideXposed() && NativeCore.isNativeAvailable()) {
             NativeCore.hideXposed();
         }
     }

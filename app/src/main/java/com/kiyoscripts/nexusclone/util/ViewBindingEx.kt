@@ -18,6 +18,21 @@ inline fun <reified T : ViewBinding> Activity.inflate(): Lazy<T> = lazy {
     inflateBinding(layoutInflater)
 }
 
+/**
+ * Lazy view binding for a [Fragment].
+ *
+ * Only safe for a Fragment whose view is never destroyed and recreated while the Fragment
+ * instance lives. A Fragment hosted by a ViewPager2, or one that survives a configuration
+ * change, gets a second `onCreateView` and this delegate would then hand back the previous,
+ * already detached view hierarchy. Use the nullable backing-field pattern instead:
+ *
+ * ```
+ * private var _binding: FooBinding? = null
+ * private val binding get() = _binding!!
+ * ```
+ *
+ * assigned in `onCreateView` and cleared in `onDestroyView`.
+ */
 inline fun <reified T : ViewBinding> Fragment.inflate(): Lazy<T> = lazy {
     inflateBinding(layoutInflater)
 }

@@ -25,6 +25,15 @@ public class AppConfig implements Parcelable {
     public int callingBUid;
     public IBinder token;
 
+    /**
+     * Device identity for this clone, as alternating property name / value pairs.
+     *
+     * The identity lives in the host's {@code nexus_identity.db}, which a guest process
+     * cannot open, so the host resolves it and ships it across the bind. Null means no
+     * identity is bound, in which case the native layer keeps its compile-time fallback.
+     */
+    public String[] spoofedProps;
+
     @Override
     public int describeContents() {
         return 0;
@@ -40,6 +49,7 @@ public class AppConfig implements Parcelable {
         dest.writeInt(this.userId);
         dest.writeInt(this.callingBUid);
         dest.writeStrongBinder(token);
+        dest.writeStringArray(this.spoofedProps);
     }
 
     public AppConfig() {
@@ -54,6 +64,7 @@ public class AppConfig implements Parcelable {
         this.userId = in.readInt();
         this.callingBUid = in.readInt();
         this.token = in.readStrongBinder();
+        this.spoofedProps = in.createStringArray();
     }
 
     public static final Parcelable.Creator<AppConfig> CREATOR = new Parcelable.Creator<AppConfig>() {

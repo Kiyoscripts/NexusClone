@@ -42,6 +42,16 @@ class InstanceDetailActivity : AppCompatActivity() {
     private lateinit var manager: InstanceManager
     private lateinit var snapshots: SnapshotManager
     private lateinit var diag: Diagnostics
+
+    /**
+     * One controller for the whole Activity lifetime.
+     *
+     * Constructing a controller per tap made the toggle useless: `isShowing()` reads a
+     * per-instance field, so a fresh controller always reported false, `show()` could not
+     * remove the previous overlay, and every tap stacked another window that held this
+     * Activity's context.
+     */
+    private lateinit var floatingWindow: FloatingWindowController
     private var instanceId: Long = 0L
     private var current: CloneInstance? = null
 
@@ -54,6 +64,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         manager = InstanceManager.get(this)
         snapshots = SnapshotManager(this)
         diag = Diagnostics(this)
+        floatingWindow = FloatingWindowController(this)
 
         setSupportActionBar(binding.toolbarLayout.toolbar)
         supportActionBar?.title = getString(R.string.nav_instances)
@@ -207,20 +218,19 @@ class InstanceDetailActivity : AppCompatActivity() {
 
         binding.btnFloat.setOnClickListener {
             val inst = current ?: return@setOnClickListener
-            val fw = FloatingWindowController(this)
-            if (!fw.canDraw()) {
+            if (!floatingWindow.canDraw()) {
                 toast(getString(R.string.float_permission))
                 try {
-                    startActivity(fw.permissionIntent())
+                    startActivity(floatingWindow.permissionIntent())
                 } catch (e: Exception) {
                     toast("cannot open overlay settings")
                 }
                 return@setOnClickListener
             }
-            if (fw.isShowing()) {
-                fw.hide()
+            if (floatingWindow.isShowing()) {
+                floatingWindow.hide()
             } else {
-                fw.show(inst.label) { fw.hide() }
+                floatingWindow.show(inst.label) { floatingWindow.hide() }
             }
         }
 
@@ -253,6 +263,19 @@ class InstanceDetailActivity : AppCompatActivity() {
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
+    }
+
+    override fun onDestroy() {
+        // The overlay's root view holds this Activity as its context; leaving it attached
+        // leaks the Activity and outlives the screen that owns it.
+        try {
+            if (this::floatingWindow.isInitialized) {
+                floatingWindow.hide()
+            }
+        } catch (e: Exception) {
+            // Best effort: a dead WindowManager must not break teardown.
+        }
+        super.onDestroy()
     }
 
     private fun toast(msg: String) =

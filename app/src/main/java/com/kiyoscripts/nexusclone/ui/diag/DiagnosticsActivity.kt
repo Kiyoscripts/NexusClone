@@ -13,6 +13,7 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.kiyoscripts.nexusclone.R
@@ -20,6 +21,10 @@ import com.kiyoscripts.nexusclone.core.diag.Check
 import com.kiyoscripts.nexusclone.core.diag.Diagnostics
 import com.kiyoscripts.nexusclone.databinding.ActivityDiagnosticsBinding
 import com.kiyoscripts.nexusclone.databinding.ItemCheckBinding
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Runtime self-check screen.
@@ -39,6 +44,16 @@ class DiagnosticsActivity : AppCompatActivity() {
     private lateinit var binding: ActivityDiagnosticsBinding
     private lateinit var diag: Diagnostics
     private val adapter = CheckAdapter()
+
+    /**
+     * In-flight guard for [run].
+     *
+     * onResume() fires again after the battery-exemption dialog and on every rotation, so
+     * without this a second sweep could start while the first is still running and the two
+     * would race to submit into the adapter.
+     */
+    @Volatile
+    private var running = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,7 +79,26 @@ class DiagnosticsActivity : AppCompatActivity() {
     }
 
     private fun run() {
-        adapter.submit(diag.runAll())
+        // runAll() is not cheap: isBlackProcessRunning() goes through
+        // ProviderCall.callSafely() -> ContentProviderCompat.acquireContentProviderClientRetry(),
+        // a blocking sleep loop with a 2000 ms budget, and the engine probe is a binder
+        // round-trip. Running it on the UI thread slept the main thread for up to 2 s on
+        // every onResume. Sweep on IO and submit back on the main dispatcher.
+        if (running) return
+        running = true
+        lifecycleScope.launch {
+            try {
+                val checks = withContext(Dispatchers.IO) { diag.runAll() }
+                adapter.submit(checks)
+            } catch (e: CancellationException) {
+                // Activity went away mid-sweep; let the scope finish cancelling.
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "diagnostics sweep failed: ${e.message}")
+            } finally {
+                running = false
+            }
+        }
     }
 
     /**

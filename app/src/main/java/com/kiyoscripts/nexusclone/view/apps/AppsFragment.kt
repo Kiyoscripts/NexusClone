@@ -25,7 +25,6 @@ import com.kiyoscripts.nexusclone.bean.AppInfo
 import com.kiyoscripts.nexusclone.databinding.FragmentAppsBinding
 import com.kiyoscripts.nexusclone.util.InjectionUtil
 import com.kiyoscripts.nexusclone.util.ShortcutUtil
-import com.kiyoscripts.nexusclone.util.inflate
 import com.kiyoscripts.nexusclone.util.MemoryManager
 import com.kiyoscripts.nexusclone.util.toast
 import com.kiyoscripts.nexusclone.view.base.LoadingActivity
@@ -48,9 +47,29 @@ class AppsFragment : Fragment() {
 
     private lateinit var mAdapter: RVAdapter<AppInfo>
 
-    private val viewBinding: FragmentAppsBinding by inflate()
+    // Nullable backing field: a Fragment's view is destroyed and recreated (ViewPager2 page
+    // recycling, config change) while the Fragment instance survives. A `by lazy` binding
+    // would hand back the previous, already detached view hierarchy on the second
+    // onCreateView and every listener/adapter would be attached to dead views.
+    private var _binding: FragmentAppsBinding? = null
+    private val viewBinding get() = _binding!!
 
     private var popupMenu: PopupMenu? = null
+
+    /**
+     * Registered in [onStart] and removed in [onStop]. BlackBoxCore keeps these in a list
+     * that is only cleared when the services come up, so a fragment that is stopped and
+     * restarted would otherwise accumulate callbacks that fire against a dead view.
+     */
+    private val serviceAvailableCallback = Runnable {
+        try {
+            Log.d(TAG, "Services became available, refreshing app list")
+            // Refresh the app list when services are ready
+            viewModel.getInstalledAppsWithRetry(userID)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in service available callback: ${e.message}")
+        }
+    }
 
     companion object {
         private const val TAG = "AppsFragment"
@@ -80,13 +99,14 @@ class AppsFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         try {
+            _binding = FragmentAppsBinding.inflate(inflater, container, false)
             viewBinding.stateView.showEmpty()
 
+            // bind() already calls RecyclerView.setAdapter(); assigning it a second time
+            // only triggers another full layout pass.
             mAdapter =
                 RVAdapter<AppInfo>(requireContext(), AppsAdapter()).bind(viewBinding.recyclerView)
 
-            viewBinding.recyclerView.adapter = mAdapter
-            
             // Enhanced RecyclerView configuration for better performance and crash prevention
             val layoutManager = GridLayoutManager(requireContext(), 4)
             layoutManager.isItemPrefetchEnabled = true
@@ -95,7 +115,10 @@ class AppsFragment : Fragment() {
             
             // Enable view cache for better scrolling performance
             viewBinding.recyclerView.setItemViewCacheSize(20)
-            viewBinding.recyclerView.setHasFixedSize(true)
+            // Items are wrap_content (item_app.xml) and a long label wraps to two lines, so
+            // the list height does depend on its contents: hasFixedSize must stay false or
+            // rows get mis-measured.
+            viewBinding.recyclerView.setHasFixedSize(false)
             
             // Add scroll listener for crash detection and prevention
             viewBinding.recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -104,7 +127,9 @@ class AppsFragment : Fragment() {
                         super.onScrollStateChanged(recyclerView, newState)
                         when (newState) {
                             RecyclerView.SCROLL_STATE_IDLE -> {
-                                // Scrolling stopped, optimize memory
+                                // Scrolling stopped. MemoryManager.optimizeMemoryForRecyclerView()
+                                // is a no-op hook now: it used to force a full GC here, which
+                                // froze the UI exactly when the list settled.
                                 MemoryManager.optimizeMemoryForRecyclerView()
                             }
                             RecyclerView.SCROLL_STATE_DRAGGING -> {
@@ -126,11 +151,9 @@ class AppsFragment : Fragment() {
                         super.onScrolled(recyclerView, dx, dy)
                         // Monitor scroll performance
                         if (Math.abs(dy) > 100) {
-                            // Fast scrolling detected, optimize memory
-                            
-                            // Check memory usage during fast scrolling
+                            // Fast scrolling detected. This only reports memory pressure now;
+                            // MemoryManager no longer forces a collection on the UI thread.
                             if (MemoryManager.isMemoryCritical()) {
-                                Log.w(TAG, "Memory critical during fast scrolling, forcing GC")
                                 MemoryManager.forceGarbageCollectionIfNeeded()
                             }
                         }
@@ -168,7 +191,7 @@ class AppsFragment : Fragment() {
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreateView: ${e.message}")
             // Return a simple view to prevent crash
-            return View(requireContext())
+            return _binding?.root ?: View(requireContext())
         }
     }
 
@@ -187,11 +210,7 @@ class AppsFragment : Fragment() {
             
             // Register callback to refresh app list when services become available
             try {
-                BlackBoxCore.get().addServiceAvailableCallback {
-                    Log.d(TAG, "Services became available, refreshing app list")
-                    // Refresh the app list when services are ready
-                    viewModel.getInstalledAppsWithRetry(userID)
-                }
+                BlackBoxCore.get().addServiceAvailableCallback(serviceAvailableCallback)
             } catch (e: Exception) {
                 Log.e(TAG, "Error registering service available callback: ${e.message}")
             }
@@ -199,6 +218,20 @@ class AppsFragment : Fragment() {
             viewModel.getInstalledAppsWithRetry(userID)
         } catch (e: Exception) {
             Log.e(TAG, "Error in onStart: ${e.message}")
+        }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        try {
+            // Drop the adapter first so it cannot keep the destroyed view hierarchy alive,
+            // then release the binding itself.
+            _binding?.recyclerView?.let { it.adapter = null }
+            popupMenu?.dismiss()
+            popupMenu = null
+            _binding = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onDestroyView: ${e.message}")
         }
     }
 
@@ -496,6 +529,13 @@ class AppsFragment : Fragment() {
     override fun onStop() {
         try {
             super.onStop()
+            // Unregister: BlackBoxCore only clears this list when the services come up, so
+            // leaving it registered would fire the callback against a dead view.
+            try {
+                BlackBoxCore.get().removeServiceAvailableCallback(serviceAvailableCallback)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing service available callback: ${e.message}")
+            }
             viewModel.resultLiveData.value = null
             viewModel.launchLiveData.value = null
         } catch (e: Exception) {

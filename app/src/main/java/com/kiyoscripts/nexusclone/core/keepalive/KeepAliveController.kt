@@ -1,5 +1,7 @@
 package com.kiyoscripts.nexusclone.core.keepalive
 
+import android.Manifest
+import android.app.Activity
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.app.job.JobInfo
@@ -7,11 +9,14 @@ import android.app.job.JobScheduler
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.kiyoscripts.nexusclone.core.instance.InstanceManager
 
 /**
@@ -110,6 +115,9 @@ class KeepAliveController private constructor(private val context: Context) {
     /**
      * Apply the user's preference: start everything when enabled, tear everything down
      * when disabled. Called from the Settings switch.
+     *
+     * Callers that run inside an Activity should call [ensureNotificationPermission] first,
+     * so the foreground-service notification is actually visible on API 33+.
      */
     fun setEnabled(enabled: Boolean) {
         KeepAlivePrefs.setEnabled(context, enabled)
@@ -121,6 +129,36 @@ class KeepAliveController private constructor(private val context: Context) {
     }
 
     fun isEnabled(): Boolean = KeepAlivePrefs.isEnabled(context)
+
+    /**
+     * Ask for POST_NOTIFICATIONS on API 33+.
+     *
+     * The keep-alive foreground service posts an ongoing notification. Without the runtime
+     * grant on API 33+ that notification is suppressed: the service still runs, but the
+     * user has no visible indication of it and no way to stop it, and some OEM skins kill
+     * a foreground service that has no visible notification.
+     *
+     * Must be called from an Activity — a Service cannot request a runtime permission, and
+     * the request has to be tied to a visible window. No-op below API 33 and no-op when the
+     * permission is already granted, so it is safe to call on every enable.
+     *
+     * @param activity the Activity that will receive
+     *   [Activity.onRequestPermissionsResult] for [requestCode].
+     * @param requestCode caller-owned request code, echoed back to that Activity.
+     */
+    fun ensureNotificationPermission(activity: Activity, requestCode: Int) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = ContextCompat.checkSelfPermission(
+            activity,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) return
+        ActivityCompat.requestPermissions(
+            activity,
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            requestCode
+        )
+    }
 
     fun isIgnoringBatteryOptimizations(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
@@ -207,13 +245,21 @@ class KeepAliveController private constructor(private val context: Context) {
         val pi = pulseIntent()
         val triggerAt = System.currentTimeMillis() + PULSE_INTERVAL_MS
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // API 31+ can revoke SCHEDULE_EXACT_ALARM at any time: the user can turn
+            // "Alarms & reminders" off, and it is off by default for apps targeting 33+
+            // on a fresh install. setExactAndAllowWhileIdle() then throws SecurityException
+            // on every single schedule, which the catch below turned into one log line per
+            // pulse while the alarm was never actually armed. Check the capability first
+            // and go straight to the inexact alarm.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
             } else {
                 am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi)
             }
         } catch (e: SecurityException) {
-            // Exact alarms denied on API 31+ without SCHEDULE_EXACT_ALARM; fall back.
+            // The capability can still be revoked between the check above and the call.
             Log.w(TAG, "exact alarm denied, using inexact: ${e.message}")
             try {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)

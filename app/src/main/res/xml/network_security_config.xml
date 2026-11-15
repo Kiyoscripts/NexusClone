@@ -1,4 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext policy.
+
+  The host itself makes no cleartext calls: there is not a single "http://" literal under
+  app/src/main/java/com/kiyoscripts/nexusclone/. The permission exists only because cloned
+  guest applications inherit this configuration (a guest runs inside the host process, so
+  NetworkSecurityPolicy reads the host's config), and plenty of real apps still talk
+  plaintext HTTP to their own backends.
+
+  WHY THIS IS NOT SCOPED TO LOOPBACK:
+
+  Scoping cleartext to localhost is the better posture for the host, and it was tried. It
+  was reverted because it breaks the container's core function: a guest calling
+  http://api.example.com gets CleartextNotPermittedException from OkHttp or
+  HttpURLConnection, and running exactly those apps is the point of the product. Android's
+  network security config has no per-uid or per-process scoping and no wildcard domain, so
+  "cleartext for guests, never for the host" cannot be expressed here.
+
+  The residual risk is therefore accepted and bounded: the host makes no cleartext calls of
+  its own, so the only traffic this permits is guest traffic that would have been cleartext
+  on the real device anyway. If the host ever gains an HTTP client, give that client its own
+  HTTPS-only configuration rather than tightening this file.
+
+  Do not widen this to a third-party host without recording why.
+-->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

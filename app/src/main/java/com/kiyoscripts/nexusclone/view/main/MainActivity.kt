@@ -9,9 +9,14 @@ import android.view.Menu
 import android.view.MenuItem
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.edit
+import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.widget.ViewPager2
 import com.afollestad.materialdialogs.MaterialDialog
 import com.afollestad.materialdialogs.input.input
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.niunaijun.blackbox.BlackBoxCore
 import com.kiyoscripts.nexusclone.R
 import com.kiyoscripts.nexusclone.app.App
@@ -40,6 +45,16 @@ class MainActivity : LoadingActivity() {
     companion object {
         private const val TAG = "MainActivity"
         
+        /**
+         * How long the first user-list load waits for the container engine. The engine is
+         * brought up on its own thread from App.onCreate(); if it has not finished by then
+         * the UI keeps its default page instead of blocking.
+         */
+        private const val ENGINE_READY_TIMEOUT_MS = 10_000L
+
+        /** Request code for the API 33+ POST_NOTIFICATIONS prompt. */
+        private const val REQUEST_NOTIFICATIONS = 0x4E44
+
         fun start(context: Context) {
             val intent = Intent(context, MainActivity::class.java)
             context.startActivity(intent)
@@ -128,7 +143,14 @@ class MainActivity : LoadingActivity() {
         // an Activity is resumed the app is foreground, so startForegroundService() is
         // permitted on Android 12+ and the service can reach startForeground() in time.
         try {
-            KeepAliveController.get(this).start()
+            val keepAlive = KeepAliveController.get(this)
+            // On API 33+ the foreground-service notification is suppressed until
+            // POST_NOTIFICATIONS is granted, which leaves the user with no visible way to
+            // stop the service. Only ask when the user has actually opted in.
+            if (keepAlive.isEnabled()) {
+                keepAlive.ensureNotificationPermission(this, REQUEST_NOTIFICATIONS)
+            }
+            keepAlive.start()
         } catch (e: Exception) {
             Log.w(TAG, "keep-alive start failed: ${e.message}")
         }
@@ -175,36 +197,71 @@ class MainActivity : LoadingActivity() {
     /**
      * Resolve the virtual user list off the main thread and rebuild the pager if it
      * differs from the single default page created in initViewPager().
+     *
+     * The engine is initialised on a background thread from App.onCreate(), so it is not
+     * necessarily up when this Activity starts. Wait for AppManager's readiness signal
+     * (bounded by [ENGINE_READY_TIMEOUT_MS]) before asking the engine anything, and keep the
+     * default page plus the loading indicator visible while waiting. If the engine never
+     * becomes ready we log and leave the empty state in place rather than blocking or
+     * crashing.
      */
     private fun loadUsersAsync() {
-        Thread({
+        // Dispatchers.Main (not Main.immediate) so the loading dialog is shown after
+        // onCreate() has returned, never in the middle of it.
+        lifecycleScope.launch(Dispatchers.Main) {
+            // Only put the loading dialog up when there is actually something to wait for;
+            // on a warm start the engine is usually already up and a dialog would just flash.
+            var loadingShown = false
             try {
-                val userList = BlackBoxCore.get().users
-                if (userList.isEmpty()) {
-                    return@Thread
-                }
-                runOnUiThread {
+                if (!AppManager.engineReady.value && !isFinishing && !isDestroyed) {
                     try {
-                        // Build a fresh list rather than mutating fragmentList in place:
-                        // ViewPagerAdapter.replaceData() keeps a reference to the list it
-                        // was given, so clearing the original would empty the adapter's
-                        // backing store before notifyDataSetChanged() ran.
-                        val rebuilt = mutableListOf<AppsFragment>()
-                        userList.forEach { rebuilt.add(AppsFragment.newInstance(it.id)) }
-                        currentUser = userList.firstOrNull()?.id ?: 0
-                        rebuilt.add(AppsFragment.newInstance(userList.size))
-                        fragmentList.clear()
-                        fragmentList.addAll(rebuilt)
-                        mViewPagerAdapter.replaceData(rebuilt)
-                        viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
+                        showLoading()
+                        loadingShown = true
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error applying user list: ${e.message}")
+                        Log.e(TAG, "Error showing loading: ${e.message}")
                     }
                 }
+
+                if (!AppManager.awaitEngineReady(ENGINE_READY_TIMEOUT_MS)) {
+                    Log.w(
+                        TAG,
+                        "engine not ready after ${ENGINE_READY_TIMEOUT_MS}ms, keeping default page"
+                    )
+                    return@launch
+                }
+
+                val userList = withContext(Dispatchers.IO) { BlackBoxCore.get().users }
+                if (userList.isEmpty()) {
+                    return@launch
+                }
+
+                // Build a fresh list rather than mutating fragmentList in place:
+                // ViewPagerAdapter.replaceData() keeps a reference to the list it
+                // was given, so clearing the original would empty the adapter's
+                // backing store before notifyDataSetChanged() ran.
+                val rebuilt = mutableListOf<AppsFragment>()
+                userList.forEach { rebuilt.add(AppsFragment.newInstance(it.id)) }
+                currentUser = userList.firstOrNull()?.id ?: 0
+                rebuilt.add(AppsFragment.newInstance(userList.size))
+                fragmentList.clear()
+                fragmentList.addAll(rebuilt)
+                mViewPagerAdapter.replaceData(rebuilt)
+                viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
+            } catch (e: CancellationException) {
+                // The Activity went away while we were waiting; let the scope unwind.
+                throw e
             } catch (e: Throwable) {
                 Log.w(TAG, "failed to load virtual users: ${e.message}")
+            } finally {
+                if (loadingShown) {
+                    try {
+                        hideLoading()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error hiding loading: ${e.message}")
+                    }
+                }
             }
-        }, "nexus-load-users").start()
+        }
     }
 
     private fun initFab() {
@@ -242,15 +299,34 @@ class MainActivity : LoadingActivity() {
 
     fun scanUser() {
         try {
+            // Same trap as the initial load: BlackBoxCore.get().users is a binder round-trip
+            // into the :black process. This is called from AppsFragment after an install or
+            // uninstall, which can happen while the engine is still coming up on its own
+            // thread. Skip the refresh in that case instead of blocking the main thread; the
+            // initial load in loadUsersAsync() will populate the pager once the engine is up.
+            if (!AppManager.engineReady.value) {
+                Log.d(TAG, "scanUser skipped, engine not ready yet")
+                return
+            }
             val userList = BlackBoxCore.get().users
 
-            if (fragmentList.size == userList.size) {
-                fragmentList.add(AppsFragment.newInstance(fragmentList.size))
-            } else if (fragmentList.size > userList.size + 1) {
-                fragmentList.removeLast()
-            }
+            // Rebuild and hand the adapter a fresh list, exactly as loadUsersAsync() does.
+            //
+            // The previous version appended to `fragmentList` and called
+            // notifyDataSetChanged(), but replaceData() had already given the adapter a
+            // different list object, so the adapter re-read its own untouched list and the
+            // new page never appeared. Worse, if the adapter had ever grown past
+            // fragmentList, onPageSelected would index past the end of this list.
+            val rebuilt = mutableListOf<AppsFragment>()
+            userList.forEach { rebuilt.add(AppsFragment.newInstance(it.id)) }
+            // Trailing page is the "add user" entry, so there is always one more page than
+            // there are virtual users.
+            rebuilt.add(AppsFragment.newInstance(userList.size))
 
-            mViewPagerAdapter.notifyDataSetChanged()
+            fragmentList.clear()
+            fragmentList.addAll(rebuilt)
+            mViewPagerAdapter.replaceData(rebuilt)
+            viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
         } catch (e: Exception) {
             Log.e(TAG, "Error in scanUser: ${e.message}")
         }

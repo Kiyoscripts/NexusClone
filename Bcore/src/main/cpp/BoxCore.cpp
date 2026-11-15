@@ -110,8 +110,26 @@ void init(JNIEnv *env, jobject clazz, jint api_level) {
 void addIORule(JNIEnv *env, jclass clazz, jstring target_path,
                jstring relocate_path) {
     ALOGD("set addIORule");
-    IO::addRule(env->GetStringUTFChars(target_path, JNI_FALSE),
-                env->GetStringUTFChars(relocate_path, JNI_FALSE));
+    // Both UTF-8 buffers must be released: the old code passed the pinned pointers straight
+    // into IO::addRule and never freed them, leaking two copies per call for the life of the
+    // process. Copy into std::string first so the release happens on every path.
+    const char *target_chars = env->GetStringUTFChars(target_path, JNI_FALSE);
+    const char *relocate_chars = env->GetStringUTFChars(relocate_path, JNI_FALSE);
+    if (target_chars == nullptr || relocate_chars == nullptr) {
+        if (target_chars != nullptr) {
+            env->ReleaseStringUTFChars(target_path, target_chars);
+        }
+        if (relocate_chars != nullptr) {
+            env->ReleaseStringUTFChars(relocate_path, relocate_chars);
+        }
+        ALOGE("addIORule: could not read rule paths");
+        return;
+    }
+    std::string target(target_chars);
+    std::string relocate(relocate_chars);
+    env->ReleaseStringUTFChars(target_path, target_chars);
+    env->ReleaseStringUTFChars(relocate_path, relocate_chars);
+    IO::addRule(target.c_str(), relocate.c_str());
 }
 
 void enableIO(JNIEnv *env, jclass clazz) {

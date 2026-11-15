@@ -30,6 +30,45 @@ class FloatingWindowController(private val context: Context) {
 
         private const val MARGIN_X = 16
         private const val MARGIN_Y = 120
+
+        /**
+         * The overlay currently attached to a WindowManager, tracked statically.
+         *
+         * A controller instance only knows about the view it added itself, so a second
+         * controller (or a second Activity) calling [show] would happily stack a second
+         * overlay on top of the first and the first could never be removed again. Tracking
+         * the attached view here lets any instance tear down whatever is on screen.
+         */
+        private val attachedLock = Any()
+        private var attachedView: View? = null
+        private var attachedWindowManager: WindowManager? = null
+        private var attachedOwner: FloatingWindowController? = null
+
+        /**
+         * Remove whatever overlay is currently attached, whoever added it, and clear the
+         * owning controller's fields so it does not keep pointing at a detached view.
+         */
+        private fun detachAttached() {
+            synchronized(attachedLock) {
+                val stale = attachedView
+                val wm = attachedWindowManager
+                val owner = attachedOwner
+                attachedView = null
+                attachedWindowManager = null
+                attachedOwner = null
+                if (stale != null) {
+                    try {
+                        wm?.removeView(stale)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "removeView of stale overlay failed: ${e.message}")
+                    }
+                }
+                if (owner != null) {
+                    owner.view = null
+                    owner.params = null
+                }
+            }
+        }
     }
 
     private val windowManager: WindowManager? =
@@ -69,13 +108,20 @@ class FloatingWindowController(private val context: Context) {
             Log.w(TAG, "no WindowManager")
             return false
         }
-        hide()
+        // Never rely on the caller to have hidden a previous overlay: drop whatever is
+        // attached first, including a window left behind by a discarded controller.
+        detachAttached()
         return try {
             val root = buildView(instanceLabel, onClose)
             val lp = buildParams()
             wm.addView(root, lp)
             view = root
             params = lp
+            synchronized(attachedLock) {
+                attachedView = root
+                attachedWindowManager = wm
+                attachedOwner = this
+            }
             true
         } catch (e: Exception) {
             Log.e(TAG, "addView failed: ${e.message}", e)
@@ -87,15 +133,23 @@ class FloatingWindowController(private val context: Context) {
 
     /** Remove the overlay if it is attached. Safe to call when nothing is showing. */
     fun hide() {
-        val current = view ?: return
+        val current = view
         val wm = windowManager
-        try {
-            wm?.removeView(current)
-        } catch (e: Exception) {
-            Log.w(TAG, "removeView failed: ${e.message}")
-        } finally {
-            view = null
-            params = null
+        view = null
+        params = null
+        if (current != null) {
+            try {
+                wm?.removeView(current)
+            } catch (e: Exception) {
+                Log.w(TAG, "removeView failed: ${e.message}")
+            }
+        }
+        synchronized(attachedLock) {
+            if (attachedOwner === this || (current != null && attachedView === current)) {
+                attachedView = null
+                attachedWindowManager = null
+                attachedOwner = null
+            }
         }
     }
 

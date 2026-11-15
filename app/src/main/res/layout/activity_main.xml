@@ -52,7 +52,7 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="24dp"
             android:layout_marginBottom="24dp"
-            android:contentDescription="TODO"
+            android:contentDescription="Clone an app into this user"
             android:src="@drawable/ic_add"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintRight_toRightOf="parent" />

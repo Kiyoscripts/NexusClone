@@ -1,11 +1,15 @@
 package com.kiyoscripts.nexusclone.view.fake
 
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import android.view.inputmethod.InputMethodManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
@@ -25,9 +29,21 @@ import com.kiyoscripts.nexusclone.util.toast
  * @CreateDate: 2022/3/14
  */
 class FollowMyLocationOverlay : AppCompatActivity() {
-    val TAG: String = "FollowMyLocationOverlay"
 
-    private val REQUEST_PERMISSIONS_REQUEST_CODE = 1
+    companion object {
+        private const val TAG = "FollowMyLocationOverlay"
+        private const val REQUEST_PERMISSIONS_REQUEST_CODE = 1
+
+        /**
+         * ACCESS_FINE_LOCATION is declared by the Bcore library manifest, which is merged
+         * into this app, so it is requestable here. ACCESS_COARSE_LOCATION is requested
+         * alongside it because Android 12+ lets the user grant only approximate location.
+         */
+        private val LOCATION_PERMISSIONS = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
+    }
 
     private val binding: ActivityOsmdroidBinding by inflate()
 
@@ -50,6 +66,10 @@ class FollowMyLocationOverlay : AppCompatActivity() {
 
         //inflate and create the map
         setContentView(binding.root)
+
+        // Nothing used to call requestPermissions() outside the result callback, so the
+        // permission flow never started at all. Ask here, over a live window.
+        ensureLocationPermissions()
 
         val location: BLocation? = intent.getParcelableExtra("location")
 
@@ -114,19 +134,59 @@ class FollowMyLocationOverlay : AppCompatActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
-        val permissionsToRequest = ArrayList<String>()
-        var i = 0
-        while (i < grantResults.size) {
-            permissionsToRequest.add(permissions[i])
-            i++
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_PERMISSIONS_REQUEST_CODE) return
+
+        // Only re-ask for what was actually denied, and only while the system still lets
+        // us ask. The previous version copied every permission straight back into the
+        // request list without ever reading grantResults, so a denial re-triggered this
+        // callback, which re-requested, forever: an undismissable dialog storm that left
+        // the Activity unusable.
+        val retry = ArrayList<String>()
+        for (i in permissions.indices) {
+            val denied = i >= grantResults.size ||
+                grantResults[i] == PackageManager.PERMISSION_DENIED
+            if (!denied) continue
+            // false after a denial means "don't ask again" (or a policy denial): the
+            // system will not show the dialog, so re-requesting would be a no-op loop.
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this, permissions[i])) {
+                retry.add(permissions[i])
+            } else {
+                Log.w(TAG, "location permission permanently denied: ${permissions[i]}")
+            }
         }
-        if (permissionsToRequest.size > 0) {
-            ActivityCompat.requestPermissions(
-                this,
-                permissionsToRequest.toTypedArray(),
-                REQUEST_PERMISSIONS_REQUEST_CODE
-            )
+
+        if (retry.isEmpty()) {
+            // Degraded, not fatal: the map still pans, zooms and returns the tapped point,
+            // which is all this screen needs. Only the "centre on my position" convenience
+            // is gone, so do not finish() the Activity.
+            Log.w(TAG, "no location permission granted, continuing without it")
+            this.toast("Location permission denied - pick the point on the map")
+            return
         }
+        this.toast("Location permission is needed to centre the map on your position")
+        ActivityCompat.requestPermissions(
+            this,
+            retry.toTypedArray(),
+            REQUEST_PERMISSIONS_REQUEST_CODE
+        )
+    }
+
+    /**
+     * Request the location permissions this screen needs, if any are still missing.
+     *
+     * No-op when everything is already granted, so it is safe to call on every create.
+     */
+    private fun ensureLocationPermissions() {
+        val missing = LOCATION_PERMISSIONS.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) return
+        ActivityCompat.requestPermissions(
+            this,
+            missing.toTypedArray(),
+            REQUEST_PERMISSIONS_REQUEST_CODE
+        )
     }
 
     private fun finishWithResult(geoPoint: GeoPoint) {

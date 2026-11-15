@@ -17,6 +17,12 @@ public class ProxyBroadcastReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        // Defence in depth: the manifest declares this receiver exported="false". If that
+        // regresses, any app could schedule an arbitrary broadcast into a guest process in
+        // an arbitrary user id, and wake the :black engine on demand.
+        if (!ProxyCallerGuard.allowBroadcast(this, TAG)) {
+            return;
+        }
         intent.setExtrasClassLoader(context.getClassLoader());
         ProxyBroadcastRecord record = ProxyBroadcastRecord.create(intent);
         if (record.mIntent == null) {

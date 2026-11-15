@@ -49,6 +49,9 @@ class InstancesActivity : AppCompatActivity() {
 
         manager = InstanceManager.get(this)
         previews = PreviewCache(this)
+        // Start the refresh timer and eviction on ON_START, stop on ON_STOP. Without this the
+        // cache never refreshes and thumbnails are never evicted.
+        previews.attach(this)
 
         setSupportActionBar(binding.toolbarLayout.toolbar)
         supportActionBar?.title = getString(R.string.nav_instances)

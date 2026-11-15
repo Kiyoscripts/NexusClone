@@ -74,48 +74,44 @@ object MemoryManager {
     }
     
     /**
-     * Force garbage collection if memory usage is high
+     * Force garbage collection if memory usage is high.
+     *
+     * Deliberately does not force a collection. On ART a forced full GC is a synchronous
+     * stop-the-world pause, not a hint, and this is reached from a RecyclerView scroll
+     * callback on the main thread — the worst possible moment to freeze the UI. ART already
+     * collects on allocation pressure; the useful thing to do here is report the pressure so
+     * the caller can drop caches.
+     *
+     * @return true when memory is critical, i.e. the caller should shed caches.
      */
     fun forceGarbageCollectionIfNeeded(): Boolean {
         return try {
             if (isMemoryCritical()) {
-                Log.w(TAG, "Memory usage critical (${getMemoryUsagePercentage()}%), forcing garbage collection")
-                System.gc()
-                Thread.sleep(100) // Give GC time to work
+                Log.w(
+                    TAG,
+                    "Memory usage critical (${getMemoryUsagePercentage()}%), caller should trim caches"
+                )
                 true
             } else {
                 false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error during garbage collection: ${e.message}")
+            Log.e(TAG, "Error checking memory pressure: ${e.message}")
             false
         }
     }
     
     /**
-     * Optimize memory for RecyclerView operations
+     * Optimize memory for RecyclerView operations.
+     *
+     * No-op by design. This used to force a full collection (twice, via the runtime as well)
+     * from a RecyclerView `SCROLL_STATE_IDLE` callback, which is a synchronous
+     * stop-the-world pause on the main thread exactly when the list settles. ART collects on
+     * allocation pressure on its own; forcing it from a scroll callback only produces jank.
+     * Kept as a no-op so existing callers still compile.
      */
     fun optimizeMemoryForRecyclerView() {
-        try {
-            val memoryUsage = getMemoryUsagePercentage()
-            
-            if (memoryUsage > 70) {
-                Log.d(TAG, "Memory usage high (${memoryUsage}%), optimizing for RecyclerView")
-                
-                // Force garbage collection
-                System.gc()
-                
-                // Clear any caches if possible
-                try {
-                    val runtime = Runtime.getRuntime()
-                    runtime.gc()
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not force runtime GC: ${e.message}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error optimizing memory: ${e.message}")
-        }
+        // Intentionally empty: see the KDoc above.
     }
     
     /**

@@ -122,6 +122,18 @@ class InstanceManager private constructor(private val context: Context) {
                 quotaBytes = quotaBytes
             )
             val id = store.insert(row)
+            if (id == -1L) {
+                // insert() reports failure as -1; a real id is AUTOINCREMENT, so it is
+                // always >= 1 and -1 can never match a row. Without this check the caller
+                // would receive a "created" clone whose id byId() can never resolve, while
+                // the virtual user and the installed apk stay behind on disk.
+                safeDeleteUser(userId)
+                return@withContext Result.failure(
+                    IllegalStateException(
+                        "could not persist instance for $packageName in user $userId"
+                    )
+                )
+            }
             val saved = row.copy(id = id)
             refresh()
             Result.success(saved)
@@ -147,7 +159,7 @@ class InstanceManager private constructor(private val context: Context) {
         out
     }
 
-    /** Launch the clone. Moves INSTALLED/COLD/FROZEN to COLD then WARM on attach. */
+    /** Launch the clone. Moves INSTALLED/COLD/FROZEN straight to WARM and stamps the launch. */
     suspend fun launch(id: Long): Result<Unit> = withContext(Dispatchers.IO) {
         val inst = byId(id) ?: return@withContext Result.failure(
             NoSuchElementException("no instance $id")
@@ -164,8 +176,9 @@ class InstanceManager private constructor(private val context: Context) {
                     IllegalStateException("no launch intent for ${inst.packageName}")
                 )
             }
-            transition(inst, InstanceState.COLD)
-            transition(inst.copy(lastLaunchAt = System.currentTimeMillis()), InstanceState.WARM)
+            transitionWith(inst, InstanceState.WARM) {
+                it.copy(lastLaunchAt = System.currentTimeMillis())
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "launch(${inst.key}) failed: ${e.message}", e)
@@ -233,10 +246,14 @@ class InstanceManager private constructor(private val context: Context) {
         val inst = byId(id) ?: return@withContext Result.failure(
             NoSuchElementException("no instance $id")
         )
+        // BlackBoxCore.uninstallPackageAsUser returns void, so a throw is the only failure
+        // signal the engine gives us. If it throws the apk is still installed in the
+        // virtual user: keep the row so the UI can retry instead of orphaning the install.
         try {
             BlackBoxCore.get().uninstallPackageAsUser(inst.packageName, inst.userId)
         } catch (e: Exception) {
-            Log.w(TAG, "uninstall ${inst.key} failed, continuing: ${e.message}")
+            Log.w(TAG, "uninstall ${inst.key} failed, keeping instance: ${e.message}")
+            return@withContext Result.failure(e)
         }
         // Only drop the virtual user when no other clone of this package shares it.
         val siblings = store.all().filter {
@@ -347,6 +364,26 @@ class InstanceManager private constructor(private val context: Context) {
     private fun transition(inst: CloneInstance, next: InstanceState) {
         if (inst.state == next) return
         store.update(inst.copy(state = next))
+        _instances.value = store.all()
+    }
+
+    /**
+     * Transition to [next] and apply [mutate] in the same UPDATE.
+     *
+     * [transition] cannot express this: it only carries a state change, so stamping another
+     * field needs a second full-row write, and the intermediate state becomes observable.
+     * Here the row is written once, so the state and the extra fields land together.
+     *
+     * The early return mirrors [transition]: when the instance is already in [next] the row
+     * is left untouched, so a relaunch of an already-WARM clone does not rewrite it.
+     */
+    private fun transitionWith(
+        inst: CloneInstance,
+        next: InstanceState,
+        mutate: (CloneInstance) -> CloneInstance,
+    ) {
+        if (inst.state == next) return
+        store.update(mutate(inst).copy(state = next))
         _instances.value = store.all()
     }
 

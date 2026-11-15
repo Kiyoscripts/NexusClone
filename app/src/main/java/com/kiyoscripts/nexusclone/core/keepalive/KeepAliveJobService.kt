@@ -39,5 +39,10 @@ class KeepAliveJobService : JobService() {
         return true
     }
 
-    override fun onStopJob(params: JobParameters?): Boolean = true
+    override fun onStopJob(params: JobParameters?): Boolean {
+        // Returning true asks the framework to reschedule. That is only correct while the
+        // user still wants keep-alive: a disabled subsystem must not keep re-arming itself
+        // through the job layer after stop() cancelled it.
+        return KeepAlivePrefs.isEnabled(this)
+    }
 }

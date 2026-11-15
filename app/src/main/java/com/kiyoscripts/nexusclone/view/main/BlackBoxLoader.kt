@@ -242,6 +242,19 @@ class BlackBoxLoader {
         }
     }
 
+    /**
+     * One-time engine bring-up.
+     *
+     * This is a blocking call: [BlackBoxCore.doCreate] probes the `:black` provider with
+     * retries and then makes a binder round-trip per service, which can take tens of seconds
+     * on a cold start. It must never be called from the main thread — `App.onCreate()` runs
+     * it on the "nexus-engine-init" thread and publishes readiness through
+     * `AppManager.awaitEngineReady()`.
+     *
+     * Nothing here touches the UI or requires a Looper, so it is safe on any thread. The
+     * service-available callback registered below only logs, and `BlackBoxCore` may invoke it
+     * on whichever thread finishes service initialisation.
+     */
     fun doOnCreate(context: Context) {
         try {
             BlackBoxCore.get().doCreate()

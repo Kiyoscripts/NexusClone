@@ -28,9 +28,38 @@ import top.niunaijun.blackbox.utils.Slog;
 public class NativeCore {
     public static final String TAG = "NativeCore";
 
-    static {
+    /**
+     * False when libblackbox.so could not be loaded for this device ABI (for example an
+     * x86/x86_64 emulator, while the APK only ships arm64-v8a and armeabi-v7a). The native
+     * methods below are deliberately left unguarded, so callers must check
+     * {@link #isNativeAvailable()} before invoking one; otherwise the call throws
+     * UnsatisfiedLinkError.
+     */
+    private static final boolean NATIVE_AVAILABLE;
 
-        System.loadLibrary("blackbox");
+    static {
+        boolean loaded = false;
+        try {
+            System.loadLibrary("blackbox");
+            loaded = true;
+        } catch (Throwable e) {
+            // UnsatisfiedLinkError is an Error, not an Exception: catching Exception here would
+            // let it escape the class initializer and turn every later NativeCore.* access into
+            // an ExceptionInInitializerError.
+            try {
+                Slog.e(TAG, "Failed to load libblackbox.so, native features disabled", e);
+            } catch (Throwable ignored) {
+                // Logging must not be able to fail the class initializer either.
+            }
+        }
+        NATIVE_AVAILABLE = loaded;
+    }
+
+    /**
+     * @return true when libblackbox.so was loaded and the native methods can be called.
+     */
+    public static boolean isNativeAvailable() {
+        return NATIVE_AVAILABLE;
     }
 
     public static native void init(int apiLevel);
@@ -44,6 +73,22 @@ public class NativeCore {
     public static native boolean disableHiddenApi();
     
     public static native boolean disableResourceLoading();
+
+    /**
+     * Install the per-clone device identity into the native property hook.
+     *
+     * {@code VirtualSpoof.cpp} hooks {@code __system_property_get} and answers from a
+     * compile-time table until this is called, which meant every clone reported the same
+     * fingerprint and serial. The host resolves the bound identity and pushes it here when a
+     * guest process binds, so each clone answers with its own values.
+     *
+     * Safe to call more than once: the native side replaces the whole table. Callers must
+     * check {@link #isNativeAvailable()} first, because the method is unguarded.
+     *
+     * @param keys   property names, e.g. {@code ro.product.model}
+     * @param values the matching values, same length and order as {@code keys}
+     */
+    public static native void setSpoofedProps(String[] keys, String[] values);
 
 
     @Keep
