@@ -98,28 +98,13 @@ public final class ProxyCallerGuard {
     /**
      * Guard for a broadcast entry point.
      *
-     * {@code getSendingUid()} is 34+; below that the binder caller uid is the best
-     * available signal.
+     * Uses the binder caller uid, which is the sender for a manifest-dispatched broadcast.
+     * {@code BroadcastReceiver.getSendingUid()} would be more precise but is not present in
+     * every android.jar this project compiles against, so it is not used here.
      *
      * Returns true when the broadcast may proceed.
      */
     public static boolean allowBroadcast(BroadcastReceiver receiver, String component) {
-        if (Build.VERSION.SDK_INT >= 34) {
-            final int sendingUid;
-            try {
-                sendingUid = receiver.getSendingUid();
-            } catch (Throwable t) {
-                return allowBinderCall(component);
-            }
-            if (sendingUid < 0) {
-                return true;
-            }
-            if (isTrustedUid(sendingUid)) {
-                return true;
-            }
-            Slog.w(TAG, component + ": rejected broadcast from uid " + sendingUid);
-            return false;
-        }
         return allowBinderCall(component);
     }
 }
