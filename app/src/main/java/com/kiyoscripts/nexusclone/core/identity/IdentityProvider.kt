@@ -2,6 +2,7 @@ package com.kiyoscripts.nexusclone.core.identity
 
 import android.content.Context
 import android.util.Log
+import com.kiyoscripts.nexusclone.core.instance.InstanceStore
 import top.niunaijun.blackbox.core.system.ProcessRecord
 
 /**
