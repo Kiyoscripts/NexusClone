@@ -88,6 +88,16 @@
          ==================================================================== -->
 
     <!-- Screen title block -->
+    <!--
+      Empty root for the Nc.* namespace.
+
+      AAPT resolves a dotted style name as inheritance: "Nc.Button" implicitly inherits
+      from "Nc", and "Nc.Button.Primary" from "Nc.Button". Without this declaration the
+      link step fails with "resource style/Nc not found" for every Nc.* style in the app.
+      Same trap as the Text root above.
+    -->
+    <style name="Nc" />
+
     <style name="Nc.AppBarTitle" parent="Text.AppBarTitle" />
     <style name="Nc.AppBarSub" parent="Text.AppBarSub" />
 

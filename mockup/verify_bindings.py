@@ -73,6 +73,35 @@ for (qual, tag, name), files in sorted(seen_names.items()):
             f"duplicate {tag}/{name} in {qual}: {', '.join(sorted(set(files)))}"
         )
 
+# Dotted style names inherit implicitly: "Nc.Button.Primary" inherits from "Nc.Button",
+# which inherits from "Nc". Every prefix must exist as a style or the link step fails with
+# "resource style/Nc not found". aapt2 compile does not catch this; only link does.
+#
+# A style that declares an explicit parent= does not need the implicit chain, so those are
+# exempt: Theme.NexusClone has parent="Theme.MaterialComponents..." and is fine.
+style_parents = {}
+for f in glob.glob(os.path.join(RES, "values*/*.xml")):
+    try:
+        root = ET.parse(f).getroot()
+    except ET.ParseError:
+        continue
+    for child in root:
+        if child.tag == "style" and child.get("name"):
+            style_parents[child.get("name")] = child.get("parent")
+
+for style_name in sorted(res_names["style"]):
+    if "." not in style_name:
+        continue
+    if style_parents.get(style_name):
+        continue
+    parts = style_name.split(".")
+    for i in range(1, len(parts)):
+        prefix = ".".join(parts[:i])
+        if prefix not in res_names["style"]:
+            failures.append(
+                f"style/{style_name} needs an implicit parent style/{prefix}, which is not declared"
+            )
+
 for f in glob.glob(os.path.join(RES, "drawable*/*")):
     res_names["drawable"].add(os.path.basename(f).split(".")[0])
 
