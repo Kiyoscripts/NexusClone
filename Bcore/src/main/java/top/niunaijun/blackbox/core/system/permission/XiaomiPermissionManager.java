@@ -264,10 +264,10 @@ public class XiaomiPermissionManager {
             // Create main notification channel
             android.app.NotificationChannel mainChannel = new android.app.NotificationChannel(
                 "blackbox_main",
-                "BlackBox Core",
+                "NexusClone Core",
                 NotificationManager.IMPORTANCE_HIGH
             );
-            mainChannel.setDescription("Core BlackBox functionality notifications");
+            mainChannel.setDescription("Core NexusClone functionality notifications");
             mainChannel.enableLights(true);
             mainChannel.enableVibration(true);
             mainChannel.setShowBadge(true);

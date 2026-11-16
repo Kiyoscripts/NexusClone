@@ -1205,7 +1205,7 @@ public class BlackBoxCore extends ClientConfiguration {
             if (packageInfo != null) {
                 String packageName = packageInfo.packageName;
                 if (packageName.equals(getHostPkg())) {
-                    return new InstallResult().installError("Cannot clone BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.");
+                    return new InstallResult().installError("NexusClone cannot be installed inside itself. That would recurse without end.");
                 }
             }
         } catch (Exception e) {
