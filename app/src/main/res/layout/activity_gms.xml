@@ -12,17 +12,14 @@
     android:background="@color/surface"
     android:fitsSystemWindows="true">
 
-    <FrameLayout
+    <!-- The include carries the id so viewBinding.toolbarLayout is a ViewToolbarBinding
+         and .toolbar resolves. -->
+    <include
         android:id="@+id/toolbarLayout"
+        layout="@layout/view_toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        app:layout_constraintTop_toTopOf="parent">
-
-        <include
-            layout="@layout/view_toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-    </FrameLayout>
+        app:layout_constraintTop_toTopOf="parent" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"

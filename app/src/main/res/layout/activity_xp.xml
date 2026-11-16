@@ -20,16 +20,15 @@
         android:fitsSystemWindows="true"
         android:orientation="vertical">
 
-        <FrameLayout
+        <!-- The include carries the id, not a wrapper: an <include> with an id generates a
+             field of the included layout's binding type (ViewToolbarBinding), which is what
+             exposes .toolbar. Wrapping it in a FrameLayout named toolbarLayout would make
+             viewBinding.toolbarLayout a FrameLayout, which has no toolbar member. -->
+        <include
             android:id="@+id/toolbarLayout"
+            layout="@layout/view_toolbar"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
-
-            <include
-                layout="@layout/view_toolbar"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
-        </FrameLayout>
+            android:layout_height="wrap_content" />
 
         <FrameLayout
             android:layout_width="match_parent"

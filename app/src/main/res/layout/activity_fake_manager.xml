@@ -19,12 +19,13 @@
     android:orientation="vertical">
 
     <FrameLayout
-        android:id="@+id/toolbarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
+        <!-- The include carries the id so viewBinding.toolbarLayout is a ViewToolbarBinding
+             and .toolbar resolves. -->
         <include
-            android:id="@+id/toolbarInclude"
+            android:id="@+id/toolbarLayout"
             layout="@layout/view_toolbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />

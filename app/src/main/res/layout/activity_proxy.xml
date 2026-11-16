@@ -9,9 +9,7 @@
   the whole thing is gated behind an explicit "route through proxy" switch so an empty
   form is not silently applied.
 
-  The hidden toolbarLayout/toolbar pair at the top exists only because the activity
-  still calls setSupportActionBar(binding.toolbarLayout.toolbar); the visible app bar
-  below it is drawn by this layout.
+  The app bar is drawn by this layout; the activity no longer calls setSupportActionBar.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -21,17 +19,7 @@
     android:fitsSystemWindows="true">
 
     <!-- Kept for setSupportActionBar(); zero height, never drawn. -->
-    <FrameLayout
-        android:id="@+id/toolbarLayout"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:visibility="gone">
-
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-    </FrameLayout>
+    
 
     <!-- App bar: back, title, live subtitle -->
     <LinearLayout

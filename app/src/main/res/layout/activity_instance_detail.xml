@@ -12,9 +12,7 @@
   secondary action is a quiet list row with an icon, a title and a chevron. Delete is
   demoted to an outlined danger button at the very bottom, past the diagnostics dump.
 
-  The hidden toolbarLayout/toolbar pair at the top exists only because the activity
-  still calls setSupportActionBar(binding.toolbarLayout.toolbar); the visible app bar
-  below it is drawn by this layout.
+  The app bar is drawn by this layout; the activity no longer calls setSupportActionBar.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -24,17 +22,7 @@
     android:fitsSystemWindows="true">
 
     <!-- Kept for setSupportActionBar(); zero height, never drawn. -->
-    <FrameLayout
-        android:id="@+id/toolbarLayout"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:visibility="gone">
-
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-    </FrameLayout>
+    
 
     <!-- App bar: back, clone name, live state line, overflow -->
     <LinearLayout
