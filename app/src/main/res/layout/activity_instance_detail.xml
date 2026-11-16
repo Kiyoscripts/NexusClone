@@ -1,155 +1,833 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Clone detail.
+
+  Replaces the old screen, which was a single column of full-width Material buttons
+  stacked under a toolbar include: fifteen identical slabs with no grouping, so
+  "Delete" sat one thumb-width below "Launch" and the destructive action was the
+  loudest thing on the page.
+
+  The rebuild splits the screen into a hero (what this clone is, at a glance), the two
+  verbs that matter (launch / stop), and then a configuration card where every
+  secondary action is a quiet list row with an icon, a title and a chevron. Delete is
+  demoted to an outlined danger button at the very bottom, past the diagnostics dump.
+
+  The hidden toolbarLayout/toolbar pair at the top exists only because the activity
+  still calls setSupportActionBar(binding.toolbarLayout.toolbar); the visible app bar
+  below it is drawn by this layout.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:background="@color/surface"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true">
 
-    <include
+    <!-- Kept for setSupportActionBar(); zero height, never drawn. -->
+    <FrameLayout
         android:id="@+id/toolbarLayout"
-        layout="@layout/view_toolbar" />
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:visibility="gone">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+    </FrameLayout>
+
+    <!-- App bar: back, clone name, live state line, overflow -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="@dimen/space_2"
+        android:paddingEnd="@dimen/gutter"
+        android:paddingTop="@dimen/space_2"
+        android:paddingBottom="@dimen/space_3">
+
+        <ImageView
+            android:id="@+id/btnBack"
+            style="@style/Nc.IconButton"
+            android:src="@drawable/ic_nc_arrow_back"
+            android:contentDescription="@string/close" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_2"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/header"
+                style="@style/Nc.AppBarTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/stateLine"
+                style="@style/Nc.AppBarSub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:fontFamily="monospace"
+                android:maxLines="1"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/btnMore"
+            style="@style/Nc.IconButton"
+            android:src="@drawable/ic_nc_more_vert"
+            android:contentDescription="@string/other" />
+    </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none"
+        android:clipToPadding="false">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:paddingStart="@dimen/gutter"
+            android:paddingEnd="@dimen/gutter"
+            android:paddingBottom="@dimen/body_bottom_inset">
+
+            <!-- Hero: preview tile, state pill, size, keep-alive -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <FrameLayout
+                    android:id="@+id/heroPreview"
+                    android:layout_width="@dimen/hero_preview_width"
+                    android:layout_height="138dp"
+                    android:background="@drawable/bg_clone_preview">
+
+                    <TextView
+                        android:id="@+id/heroGlyph"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:textSize="@dimen/clone_glyph_sm"
+                        android:textStyle="bold"
+                        android:textColor="#D1FFFFFF"
+                        android:includeFontPadding="false" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_4"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:id="@+id/statePill"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge"
+                        android:backgroundTint="@color/success_soft"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp">
+
+                        <View
+                            android:layout_width="5dp"
+                            android:layout_height="5dp"
+                            android:background="@drawable/bg_dot"
+                            android:backgroundTint="@color/success" />
+
+                        <TextView
+                            android:id="@+id/statePillText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/success"
+                            android:includeFontPadding="false" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_2"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:id="@+id/sizeLine"
+                            style="@style/Text.Numeric"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:textSize="11sp"
+                            android:textColor="@color/text_tertiary"
+                            android:text="data"
+                            android:includeFontPadding="false" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/keepAliveLine"
+                        style="@style/Text.Caption"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- The two verbs that matter -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_4"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/btnLaunch"
+                    style="@style/Nc.Button.Primary"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/button_height"
+                    android:layout_weight="1"
+                    android:text="@string/instance_launch"
+                    android:drawableStart="@drawable/ic_nc_play"
+                    android:drawablePadding="@dimen/space_2"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/btnStop"
+                    style="@style/Nc.Button.Ghost"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/button_height"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_2"
+                    android:text="@string/instance_stop"
+                    android:drawableStart="@drawable/ic_nc_stop"
+                    android:drawablePadding="@dimen/space_2"
+                    android:gravity="center" />
+            </LinearLayout>
 
             <TextView
-                android:id="@+id/header"
+                style="@style/Nc.SectionHead"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_5"
+                android:text="Configuration" />
+
+            <!-- Configuration: every secondary action as a quiet row -->
+            <LinearLayout
+                style="@style/Nc.Card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textColor="@color/primary_text"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+                android:layout_marginTop="@dimen/space_2">
+
+                <LinearLayout
+                    android:id="@+id/btnProxy"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_globe"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Proxy" />
+
+                        <TextView
+                            android:id="@+id/subProxy"
+                            style="@style/Text.Caption"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/badgeProxy"
+                        style="@style/Nc.Badge"
+                        android:textColor="@color/success"
+                        android:backgroundTint="@color/success_soft"
+                        android:text="On" />
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btnIdentity"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_shield"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Device identity" />
+
+                        <TextView
+                            android:id="@+id/subIdentity"
+                            style="@style/Text.Caption"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/rowSnapshot"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_folder"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Backup" />
+
+                        <TextView
+                            android:id="@+id/subSnapshot"
+                            style="@style/Text.Caption"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/rowMacro"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_bolt"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Macros" />
+
+                        <TextView
+                            android:id="@+id/subMacro"
+                            style="@style/Text.Caption"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btnFreeze"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_stop"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Freeze" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btnRename"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_phone"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Rename" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btnQuota"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_cpu"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Storage quota" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btnFloat"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_layers"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Floating window" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btnDiagnostics"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_check"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Diagnostics" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btnClear"
+                    style="@style/Nc.ListRow">
+
+                    <FrameLayout style="@style/Nc.IconTile">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_nc_refresh"
+                            android:tint="@color/accent"
+                            android:contentDescription="@null" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Clear data" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:src="@drawable/ic_nc_chevron_right"
+                        android:tint="@color/text_tertiary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+            </LinearLayout>
 
             <TextView
-                android:id="@+id/stateLine"
+                style="@style/Nc.SectionHead"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_5"
+                android:text="Identity" />
+
+            <!-- Identity: label/value pairs, values in mono so digits line up -->
+            <LinearLayout
+                style="@style/Nc.Card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="@color/secondary_text"
-                android:textSize="13sp" />
+                android:layout_marginTop="@dimen/space_2"
+                android:paddingTop="@dimen/space_1"
+                android:paddingBottom="@dimen/space_1">
 
-            <TextView
-                android:id="@+id/sizeLine"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:textColor="@color/secondary_text"
-                android:textSize="13sp" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="@dimen/space_4"
+                    android:paddingEnd="@dimen/space_4"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp">
 
-            <TextView
-                android:id="@+id/keepAliveLine"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:textColor="@color/secondary_text"
-                android:textSize="13sp" />
+                    <TextView
+                        android:layout_width="84dp"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_tertiary"
+                        android:text="Model" />
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="12dp"
-                android:background="@color/divider" />
+                    <TextView
+                        android:id="@+id/specModel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textSize="12sp"
+                        android:fontFamily="monospace"
+                        android:textColor="@color/text_primary"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+                </LinearLayout>
 
-            <Button
-                android:id="@+id/btnLaunch"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_launch" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="@dimen/space_4"
+                    android:paddingEnd="@dimen/space_4"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp">
 
-            <Button
-                android:id="@+id/btnStop"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_stop" />
+                    <TextView
+                        android:layout_width="84dp"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_tertiary"
+                        android:text="Android" />
 
-            <Button
-                android:id="@+id/btnFreeze"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_freeze" />
+                    <TextView
+                        android:id="@+id/specAndroid"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textSize="12sp"
+                        android:fontFamily="monospace"
+                        android:textColor="@color/text_primary"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+                </LinearLayout>
 
-            <Button
-                android:id="@+id/btnRename"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_rename" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="@dimen/space_4"
+                    android:paddingEnd="@dimen/space_4"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp">
 
-            <Button
-                android:id="@+id/btnSnapshot"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_snapshot" />
+                    <TextView
+                        android:layout_width="84dp"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_tertiary"
+                        android:text="IMEI" />
 
-            <Button
-                android:id="@+id/btnRestore"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_restore" />
+                    <TextView
+                        android:id="@+id/specImei"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textSize="12sp"
+                        android:fontFamily="monospace"
+                        android:textColor="@color/text_primary"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+                </LinearLayout>
 
-            <Button
-                android:id="@+id/btnMacro"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_macro" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="@dimen/space_4"
+                    android:paddingEnd="@dimen/space_4"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp">
 
-            <Button
-                android:id="@+id/btnProxy"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_proxy" />
+                    <TextView
+                        android:layout_width="84dp"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_tertiary"
+                        android:text="MAC" />
 
-            <Button
-                android:id="@+id/btnIdentity"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_identity" />
+                    <TextView
+                        android:id="@+id/specMac"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textSize="12sp"
+                        android:fontFamily="monospace"
+                        android:textColor="@color/text_primary"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+                </LinearLayout>
 
-            <Button
-                android:id="@+id/btnQuota"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_quota" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="@dimen/space_4"
+                    android:paddingEnd="@dimen/space_4"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp">
 
-            <Button
-                android:id="@+id/btnFloat"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_float" />
+                    <TextView
+                        android:layout_width="84dp"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_tertiary"
+                        android:text="Serial" />
 
-            <Button
-                android:id="@+id/btnDiagnostics"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_diagnostics" />
+                    <TextView
+                        android:id="@+id/specSerial"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textSize="12sp"
+                        android:fontFamily="monospace"
+                        android:textColor="@color/text_primary"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+                </LinearLayout>
+            </LinearLayout>
 
-            <Button
-                android:id="@+id/btnClear"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_clear" />
-
-            <Button
-                android:id="@+id/btnDelete"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/instance_delete" />
-
+            <!-- Raw diagnostics dump. Tertiary and small: it is reference, not content. -->
             <TextView
                 android:id="@+id/detail"
+                style="@style/Text.Mono"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:fontFamily="monospace"
-                android:textColor="@color/secondary_text"
-                android:textSize="11sp" />
+                android:layout_marginTop="@dimen/space_4"
+                android:textSize="11sp"
+                android:textColor="@color/text_tertiary" />
 
+            <TextView
+                android:id="@+id/btnDelete"
+                style="@style/Nc.Button.Danger"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/button_height"
+                android:layout_marginTop="@dimen/space_4"
+                android:text="@string/instance_delete"
+                android:drawableStart="@drawable/ic_nc_trash"
+                android:drawablePadding="@dimen/space_2"
+                android:gravity="center" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

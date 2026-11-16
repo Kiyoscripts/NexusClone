@@ -6,6 +6,11 @@
       The brand ramp is deliberately NOT overridden: indigo reads correctly on both a white
       and a near-black background, and keeping it fixed means the toolbar, the FAB and the
       splash all stay recognisably the same product in either theme.
+
+      Every colour that values/colors.xml declares and that differs between themes must be
+      overridden here. A token that is only declared in values/ silently keeps its light
+      value in dark mode, which is how the diagnostics PASS/FAIL text ended up as
+      light-theme green and red on a near-black background.
     -->
 
     <color name="surface">#12121A</color>
@@ -18,6 +23,24 @@
     <color name="divider">#33FFFFFF</color>
     <color name="preview_placeholder">#0C0C12</color>
 
+    <color name="ripple">#1FFFFFFF</color>
+    <color name="ripple_mask">#FFFFFFFF</color>
+
     <color name="status_pass">#66BB6A</color>
     <color name="status_fail">#EF5350</color>
+
+    <!-- Design tokens, dark values. "accent" is inherited from values/colors.xml
+         (brand_lavender) and is intentionally not redeclared here. -->
+    <color name="text_tertiary">#5C5C70</color>
+    <color name="hairline">#262633</color>
+
+    <color name="accent_strong">#8B8BF5</color>
+    <color name="accent_soft">#248B8BF5</color>
+
+    <color name="success">#4ADE80</color>
+    <color name="warn">#FBBF24</color>
+    <color name="danger">#F87171</color>
+    <color name="success_soft">#244ADE80</color>
+    <color name="warn_soft">#24FBBF24</color>
+    <color name="danger_soft">#24F87171</color>
 </resources>

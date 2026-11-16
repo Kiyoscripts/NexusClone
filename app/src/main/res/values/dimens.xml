@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Spacing and sizing scale.
+
+      Before this file existed the layouts carried 19 distinct inline dp values and 8
+      distinct inline sp values, so "16dp here, 14dp there" was invisible drift rather
+      than a decision. Every value below is a step on one 4dp grid; layouts reference
+      these names and never a raw number.
+    -->
+
+    <!-- Spacing: 4dp grid -->
+    <dimen name="space_1">4dp</dimen>
+    <dimen name="space_2">8dp</dimen>
+    <dimen name="space_3">12dp</dimen>
+    <dimen name="space_4">16dp</dimen>
+    <dimen name="space_5">20dp</dimen>
+    <dimen name="space_6">24dp</dimen>
+    <dimen name="space_7">32dp</dimen>
+    <dimen name="space_8">48dp</dimen>
+
+    <!-- Screen gutter. Wider on tablets so text lines do not run edge to edge. -->
+    <dimen name="gutter">20dp</dimen>
+
+    <!-- Corner radii -->
+    <dimen name="radius_chip">8dp</dimen>
+    <dimen name="radius_input">12dp</dimen>
+    <dimen name="radius_card">16dp</dimen>
+    <dimen name="radius_sheet">20dp</dimen>
+    <dimen name="radius_fab">28dp</dimen>
+    <dimen name="radius_pill">999dp</dimen>
+
+    <!-- Hairline border. 1dp reads as a border, not a shadow. -->
+    <dimen name="hairline">1dp</dimen>
+
+    <!-- Touch targets. 48dp is the platform minimum; nothing interactive goes below it. -->
+    <dimen name="touch_min">48dp</dimen>
+    <dimen name="iconbtn_size">40dp</dimen>
+    <dimen name="iconbtn_size_sm">32dp</dimen>
+    <dimen name="icon_size">20dp</dimen>
+    <dimen name="icon_size_sm">16dp</dimen>
+    <dimen name="icon_size_lg">24dp</dimen>
+
+    <!-- Components -->
+    <dimen name="appbar_height">56dp</dimen>
+    <dimen name="tabbar_height">62dp</dimen>
+    <dimen name="fab_size">56dp</dimen>
+    <dimen name="input_height">48dp</dimen>
+    <dimen name="button_height">48dp</dimen>
+    <dimen name="switch_width">44dp</dimen>
+    <dimen name="switch_height">26dp</dimen>
+    <dimen name="switch_thumb">20dp</dimen>
+    <dimen name="listrow_min_height">56dp</dimen>
+    <dimen name="section_head_top">8dp</dimen>
+
+    <!-- Clone grid -->
+    <dimen name="clone_grid_gap">12dp</dimen>
+    <dimen name="clone_preview_ratio">1.44</dimen>
+    <dimen name="clone_glyph">30sp</dimen>
+    <dimen name="clone_glyph_sm">26sp</dimen>
+    <dimen name="hero_preview_width">96dp</dimen>
+
+    <!-- App rows -->
+    <dimen name="approw_icon">40dp</dimen>
+    <dimen name="approw_icon_radius">11dp</dimen>
+
+    <!-- Diagnostics -->
+    <dimen name="ring_size">92dp</dimen>
+    <dimen name="ring_stroke">7dp</dimen>
+    <dimen name="check_icon">28dp</dimen>
+
+    <!-- Bottom inset so the last row clears the FAB and the tab bar. -->
+    <dimen name="body_bottom_inset">96dp</dimen>
+</resources>

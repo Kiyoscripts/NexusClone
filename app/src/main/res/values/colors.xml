@@ -45,7 +45,55 @@
     <color name="state_badge_scrim">#CC000000</color>
     <color name="splash_background">#12121A</color>
 
+    <!-- Ripple. Light theme uses a dark ripple on white; night overrides it. -->
+    <color name="ripple">#14000000</color>
+    <color name="ripple_mask">#FFFFFFFF</color>
+
     <!-- Status colours for the diagnostics list -->
     <color name="status_pass">#2E7D32</color>
     <color name="status_fail">#C62828</color>
+
+    <!--
+      Design tokens.
+
+      These are the names the redesigned layouts use. The older names above
+      (primary_text, secondary_text, surface, surface_raised) are kept because a lot of
+      existing code and layout still references them; the tokens below alias them where
+      they mean the same thing, so there is one source of truth per colour and the night
+      overrides keep working through the alias.
+    -->
+
+    <!-- Text -->
+    <color name="text_primary">@color/primary_text</color>
+    <color name="text_secondary">@color/secondary_text</color>
+    <color name="text_tertiary">#5C5C70</color>
+    <color name="text_on_accent">#FFFFFFFF</color>
+
+    <!-- Borders. A hairline, not a shadow. -->
+    <color name="hairline">#262633</color>
+
+    <!-- Accent. One muted lavender, plus a stronger variant for filled controls.
+         "accent" itself is declared in the legacy brand block above as an alias of
+         brand_lavender; declaring it again here would be a duplicate resource. -->
+    <color name="accent_strong">#8B8BF5</color>
+    <color name="accent_soft">#248B8BF5</color>
+
+    <!-- Semantic -->
+    <color name="success">#4ADE80</color>
+    <color name="warn">#FBBF24</color>
+    <color name="danger">#F87171</color>
+    <color name="success_soft">#244ADE80</color>
+    <color name="warn_soft">#24FBBF24</color>
+    <color name="danger_soft">#24F87171</color>
+
+    <!-- Clone preview gradients. Four deterministic tints so a clone keeps the same
+         colour across restarts instead of being assigned one at random. -->
+    <color name="clone_tint_1_from">#1E2A4A</color>
+    <color name="clone_tint_1_to">#12172A</color>
+    <color name="clone_tint_2_from">#3A1E3E</color>
+    <color name="clone_tint_2_to">#1A1020</color>
+    <color name="clone_tint_3_from">#1E3A32</color>
+    <color name="clone_tint_3_to">#101A18</color>
+    <color name="clone_tint_4_from">#3A2E1E</color>
+    <color name="clone_tint_4_to">#1A1610</color>
 </resources>

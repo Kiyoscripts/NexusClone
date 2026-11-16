@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Clone preview tint 1. Four deterministic gradients so a clone keeps the same colour
+     across restarts instead of being assigned one at random on each bind. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="290"
+        android:endColor="@color/clone_tint_1_to"
+        android:startColor="@color/clone_tint_1_from" />
+    <corners android:radius="@dimen/radius_card" />
+    <stroke
+        android:width="@dimen/hairline"
+        android:color="@color/hairline" />
+</shape>

@@ -1,44 +1,242 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Apps picker.
+
+  The screen is a single vertical stack: app bar, search field, filter chips,
+  section head, then the list. The list lives in a weighted FrameLayout so the
+  StateView and the empty state can overlay it without pushing the chrome off
+  screen. No elevation anywhere; separation comes from the hairline borders in
+  the drawables.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:app="http://schemas.android.com/apk/res-auto"
-        xmlns:tools="http://schemas.android.com/tools"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/surface"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
+    tools:context=".view.list.ListActivity">
+
+    <!-- App bar -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        tools:context=".view.list.ListActivity">
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="@dimen/space_2"
+        android:paddingEnd="@dimen/gutter"
+        android:paddingTop="@dimen/space_2"
+        android:paddingBottom="@dimen/space_3">
 
-    <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+        <ImageView
+            android:id="@+id/btnBack"
+            style="@style/Nc.IconButton"
+            android:src="@drawable/ic_nc_arrow_back"
+            android:contentDescription="@string/close" />
 
-        <include
-                android:id="@+id/toolbar_layout"
-                layout="@layout/view_toolbar"
-                android:layout_width="match_parent"
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_2"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/Nc.AppBarTitle"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                app:layout_constraintTop_toTopOf="parent" />
+                android:text="@string/nav_apps" />
 
-        <com.ferfalk.simplesearchview.SimpleSearchView
-                android:id="@+id/searchView"
-                app:type="card"
+            <TextView
+                android:id="@+id/subtitle"
+                style="@style/Nc.AppBarSub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="@string/choose_app" />
+        </LinearLayout>
+    </LinearLayout>
 
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@color/primary" />
+    <!-- Search field -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/input_height"
+        android:layout_marginStart="@dimen/gutter"
+        android:layout_marginEnd="@dimen/gutter"
+        android:background="@drawable/bg_input"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="@dimen/space_3"
+        android:paddingEnd="@dimen/space_3">
 
-    </FrameLayout>
+        <ImageView
+            android:layout_width="17dp"
+            android:layout_height="17dp"
+            android:src="@drawable/ic_nc_search"
+            android:tint="@color/text_tertiary"
+            android:contentDescription="@null" />
 
+        <EditText
+            android:id="@+id/search"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_2"
+            android:background="@null"
+            android:hint="@string/choose_app"
+            android:textSize="14sp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_tertiary"
+            android:inputType="text"
+            android:singleLine="true"
+            android:includeFontPadding="false" />
 
-    <com.github.nukc.stateview.StateView
+        <ImageView
+            android:id="@+id/btnClearSearch"
+            android:layout_width="15dp"
+            android:layout_height="15dp"
+            android:src="@drawable/ic_nc_close"
+            android:tint="@color/text_tertiary"
+            android:contentDescription="@string/close"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Filter chips -->
+    <LinearLayout
+        android:id="@+id/chipGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_3"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/gutter"
+        android:paddingEnd="@dimen/gutter">
+
+        <TextView
+            android:id="@+id/chipAll"
+            style="@style/Nc.Chip"
+            android:layout_marginEnd="@dimen/space_2"
+            android:background="@drawable/bg_chip_on"
+            android:textColor="@color/text_on_accent"
+            android:text="All" />
+
+        <TextView
+            android:id="@+id/chipUser"
+            style="@style/Nc.Chip"
+            android:layout_marginEnd="@dimen/space_2"
+            android:text="User" />
+
+        <TextView
+            android:id="@+id/chipSystem"
+            style="@style/Nc.Chip"
+            android:layout_marginEnd="@dimen/space_2"
+            android:text="System" />
+
+        <TextView
+            android:id="@+id/chipCloned"
+            style="@style/Nc.Chip"
+            android:layout_marginEnd="@dimen/space_2"
+            android:text="Cloned" />
+    </LinearLayout>
+
+    <!-- Section head -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_4"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="@dimen/gutter"
+        android:paddingEnd="@dimen/gutter">
+
+        <TextView
+            style="@style/Nc.SectionHead"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/installed_app" />
+
+        <TextView
+            android:id="@+id/count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_2"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:textColor="@color/text_tertiary"
+            android:includeFontPadding="false" />
+    </LinearLayout>
+
+    <!-- List + overlays -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:minHeight="0dp">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingStart="@dimen/gutter"
+            android:paddingEnd="@dimen/gutter"
+            android:paddingTop="@dimen/space_2"
+            android:paddingBottom="@dimen/body_bottom_inset" />
+
+        <com.github.nukc.stateview.StateView
             android:id="@+id/stateView"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-    <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerView"
+        <LinearLayout
+            android:id="@+id/emptyState"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            app:layout_constraintTop_toBottomOf="@id/toolbar" />
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:paddingStart="@dimen/space_7"
+            android:paddingEnd="@dimen/space_7"
+            android:visibility="gone">
 
+            <ImageView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center_horizontal"
+                android:src="@drawable/ic_nc_grid"
+                android:tint="@color/text_tertiary"
+                android:contentDescription="@null" />
+
+            <TextView
+                style="@style/Text.Headline"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_4"
+                android:layout_gravity="center_horizontal"
+                android:text="@string/apps_empty_title"
+                android:gravity="center" />
+
+            <TextView
+                style="@style/Text.Caption"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_2"
+                android:layout_gravity="center_horizontal"
+                android:text="@string/apps_empty_body"
+                android:gravity="center" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- Hidden toolbar shim: ListActivity calls setSupportActionBar on this. -->
+    <FrameLayout
+        android:id="@+id/toolbarLayout"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:visibility="gone">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+    </FrameLayout>
 
 </LinearLayout>

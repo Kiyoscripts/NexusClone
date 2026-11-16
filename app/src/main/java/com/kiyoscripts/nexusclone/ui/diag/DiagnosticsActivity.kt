@@ -1,9 +1,9 @@
 package com.kiyoscripts.nexusclone.ui.diag
 
+import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,8 +11,10 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -25,11 +27,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Runtime self-check screen.
  *
- * Answers "why did my clone not work" without adb.
+ * Answers "why did my clone not work" without adb. The summary ring is the only thing on
+ * the screen that is read at a glance; the rows below it are the detail.
+ *
+ * Status colours come from the theme (@color/success, @color/warn, @color/danger), not
+ * from hardcoded ints. The previous version wrote 0xFF2E7D32 and 0xFFC62828 directly into
+ * setTextColor, so in dark mode the PASS/FAIL text was light-theme green and red on a
+ * near-black background.
  */
 class DiagnosticsActivity : AppCompatActivity() {
 
@@ -48,12 +59,14 @@ class DiagnosticsActivity : AppCompatActivity() {
     /**
      * In-flight guard for [run].
      *
-     * onResume() fires again after the battery-exemption dialog and on every rotation, so
+     * onResume fires again after the battery-exemption dialog and on every rotation, so
      * without this a second sweep could start while the first is still running and the two
      * would race to submit into the adapter.
      */
     @Volatile
     private var running = false
+
+    private var ringAnimator: ValueAnimator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,15 +74,13 @@ class DiagnosticsActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         diag = Diagnostics(this)
-        setSupportActionBar(binding.toolbarLayout.toolbar)
-        supportActionBar?.title = getString(R.string.diag_title)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        binding.toolbarLayout.toolbar.setNavigationOnClickListener { finish() }
+
+        binding.btnBack.setOnClickListener { finish() }
+        binding.btnRerun.setOnClickListener { run() }
+        binding.btnRunAll.setOnClickListener { run() }
 
         binding.recycler.layoutManager = LinearLayoutManager(this)
         binding.recycler.adapter = adapter
-
-        binding.btnRun.setOnClickListener { run() }
     }
 
     override fun onResume() {
@@ -82,16 +93,15 @@ class DiagnosticsActivity : AppCompatActivity() {
         // runAll() is not cheap: isBlackProcessRunning() goes through
         // ProviderCall.callSafely() -> ContentProviderCompat.acquireContentProviderClientRetry(),
         // a blocking sleep loop with a 2000 ms budget, and the engine probe is a binder
-        // round-trip. Running it on the UI thread slept the main thread for up to 2 s on
-        // every onResume. Sweep on IO and submit back on the main dispatcher.
+        // round-trip. Sweep on IO and submit back on the main dispatcher.
         if (running) return
         running = true
         lifecycleScope.launch {
             try {
                 val checks = withContext(Dispatchers.IO) { diag.runAll() }
                 adapter.submit(checks)
+                renderSummary(checks)
             } catch (e: CancellationException) {
-                // Activity went away mid-sweep; let the scope finish cancelling.
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "diagnostics sweep failed: ${e.message}")
@@ -99,6 +109,50 @@ class DiagnosticsActivity : AppCompatActivity() {
                 running = false
             }
         }
+    }
+
+    private fun renderSummary(checks: List<Check>) {
+        val passed = checks.count { it.ok }
+        val total = checks.size
+        val failed = total - passed
+
+        binding.ringNum.text = passed.toString()
+        binding.ringDen.text = "/$total"
+
+        val fraction = if (total == 0) 0f else passed.toFloat() / total
+        animateRing(fraction)
+
+        val ringColor = when {
+            failed == 0 -> R.color.success
+            failed <= 2 -> R.color.warn
+            else -> R.color.danger
+        }
+        binding.ring.setRingColor(ContextCompat.getColor(this, ringColor))
+
+        binding.ringTitle.text = if (failed == 0) {
+            getString(R.string.nc_healthy)
+        } else {
+            getString(R.string.nc_needs_attention, failed)
+        }
+        binding.ringSub.text = getString(R.string.nc_checks_summary, passed, total)
+
+        val stamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        binding.ringMeta.text = getString(R.string.nc_last_run, stamp)
+        binding.subtitle.text = getString(R.string.nc_checks_summary, passed, total)
+    }
+
+    private fun animateRing(target: Float) {
+        ringAnimator?.cancel()
+        ringAnimator = ValueAnimator.ofFloat(0f, target).apply {
+            duration = 420L
+            addUpdateListener { binding.ring.setProgress(it.animatedValue as Float) }
+            start()
+        }
+    }
+
+    override fun onDestroy() {
+        ringAnimator?.cancel()
+        super.onDestroy()
     }
 
     /**
@@ -141,16 +195,30 @@ class DiagnosticsActivity : AppCompatActivity() {
 
         override fun getItemCount(): Int = items.size
 
-        override fun onBindViewHolder(holder: VH, position: Int) {
-            holder.bind(items[position])
-        }
+        override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
 
         inner class VH(private val b: ItemCheckBinding) : RecyclerView.ViewHolder(b.root) {
+
             fun bind(c: Check) {
-                val tag = if (c.ok) getString(R.string.diag_pass) else getString(R.string.diag_fail)
-                b.title.text = "[$tag] ${c.title}"
-                b.title.setTextColor(if (c.ok) 0xFF2E7D32.toInt() else 0xFFC62828.toInt())
+                b.title.text = c.title
                 b.detail.text = c.detail
+
+                // Theme colours, not hardcoded ints: these flip with the night palette.
+                val (glyph, tint, label) = if (c.ok) {
+                    Triple(R.drawable.ic_nc_check, R.color.success, R.string.nc_pass)
+                } else {
+                    Triple(R.drawable.ic_nc_alert, R.color.danger, R.string.nc_fail)
+                }
+
+                val color = ContextCompat.getColor(this@DiagnosticsActivity, tint)
+                b.checkGlyph.setImageResource(glyph)
+                b.checkGlyph.setColorFilter(color)
+                b.checkIcon.backgroundTintList = ContextCompat.getColorStateList(
+                    this@DiagnosticsActivity,
+                    if (c.ok) R.color.success_soft else R.color.danger_soft
+                )
+                b.state.setText(label)
+                b.state.setTextColor(color)
 
                 // Only the failing battery row is actionable: tapping it asks the system
                 // for the exemption that the check is reporting as missing.

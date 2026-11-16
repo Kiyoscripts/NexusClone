@@ -66,12 +66,6 @@
             </intent-filter>
         </activity>
 
-        <!-- NexusClone: instance grid -->
-        <activity
-            android:name=".ui.instances.InstancesActivity"
-            android:exported="false"
-            android:launchMode="singleTop" />
-
         <!-- NexusClone: per-instance detail -->
         <activity
             android:name=".ui.instance.InstanceDetailActivity"

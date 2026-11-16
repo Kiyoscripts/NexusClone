@@ -4,7 +4,6 @@ import com.kiyoscripts.nexusclone.data.AppsRepository
 import com.kiyoscripts.nexusclone.data.FakeLocationRepository
 import com.kiyoscripts.nexusclone.data.GmsRepository
 import com.kiyoscripts.nexusclone.data.XpRepository
-import com.kiyoscripts.nexusclone.view.apps.AppsFactory
 import com.kiyoscripts.nexusclone.view.fake.FakeLocationFactory
 import com.kiyoscripts.nexusclone.view.gms.GmsFactory
 import com.kiyoscripts.nexusclone.view.list.ListFactory
@@ -25,10 +24,6 @@ object InjectionUtil {
     private val gmsRepository = GmsRepository()
 
     private val fakeLocationRepository = FakeLocationRepository()
-
-    fun getAppsFactory() : AppsFactory {
-        return AppsFactory(appsRepository)
-    }
 
     fun getListFactory(): ListFactory {
         return ListFactory(appsRepository)

@@ -2,106 +2,377 @@
 <!--
   Proxy screen.
 
-  Same two structural bugs as activity_identity.xml: a match_parent-height child
-  inside a ScrollView (which stops the page scrolling) and a weighted 0dp
-  RecyclerView inside a wrap_content parent (which collapses the list to zero
-  height). Both fixed. Hints moved to string resources.
+  Replaces a form that was five unlabelled EditTexts stacked in a ScrollView with a
+  Spinner for the type: you could not tell the host field from the user field without
+  reading the hint, and the hint vanished the moment you typed. Every field now has a
+  persistent label above it, the type is a segmented control instead of a spinner, and
+  the whole thing is gated behind an explicit "route through proxy" switch so an empty
+  form is not silently applied.
+
+  The hidden toolbarLayout/toolbar pair at the top exists only because the activity
+  still calls setSupportActionBar(binding.toolbarLayout.toolbar); the visible app bar
+  below it is drawn by this layout.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:background="@color/surface"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true">
 
-    <include
+    <!-- Kept for setSupportActionBar(); zero height, never drawn. -->
+    <FrameLayout
         android:id="@+id/toolbarLayout"
-        layout="@layout/view_toolbar" />
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:visibility="gone">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+    </FrameLayout>
+
+    <!-- App bar: back, title, live subtitle -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="@dimen/space_2"
+        android:paddingEnd="@dimen/gutter"
+        android:paddingTop="@dimen/space_2"
+        android:paddingBottom="@dimen/space_3">
+
+        <ImageView
+            android:id="@+id/btnBack"
+            style="@style/Nc.IconButton"
+            android:src="@drawable/ic_nc_arrow_back"
+            android:contentDescription="@string/close" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_2"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/Nc.AppBarTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/instance_proxy" />
+
+            <TextView
+                android:id="@+id/subtitle"
+                style="@style/Nc.AppBarSub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp" />
+        </LinearLayout>
+    </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:scrollbars="none">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:paddingStart="@dimen/gutter"
+            android:paddingEnd="@dimen/gutter"
+            android:paddingBottom="@dimen/body_bottom_inset">
 
-            <EditText
-                android:id="@+id/proxyName"
+            <!-- Master switch: nothing below applies unless this is on -->
+            <LinearLayout
+                style="@style/Nc.Card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/proxy_name_hint"
-                android:importantForAutofill="no"
-                android:inputType="text"
-                android:maxLines="1" />
+                android:paddingStart="@dimen/space_4"
+                android:paddingEnd="@dimen/space_4"
+                android:paddingTop="@dimen/space_3"
+                android:paddingBottom="@dimen/space_3">
 
-            <Spinner
-                android:id="@+id/proxyType"
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Text.Label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Route through proxy" />
+
+                        <TextView
+                            style="@style/Text.Caption"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Applies to this clone only" />
+                    </LinearLayout>
+
+                    <Switch
+                        android:id="@+id/switchEnabled"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:thumbTint="@color/accent_strong"
+                        android:trackTint="@color/accent_soft" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Type: segmented control, three options, no spinner -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp" />
+                android:layout_marginTop="@dimen/space_4"
+                android:orientation="vertical">
 
-            <EditText
-                android:id="@+id/proxyHost"
+                <TextView
+                    style="@style/Nc.FieldLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/proxy_type" />
+
+                <LinearLayout
+                    android:id="@+id/typeGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_segment_track"
+                    android:orientation="horizontal"
+                    android:padding="3dp">
+
+                    <TextView
+                        android:id="@+id/segSocks"
+                        android:layout_width="0dp"
+                        android:layout_height="34dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_segment_on"
+                        android:gravity="center"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/text_primary"
+                        android:text="SOCKS5"
+                        android:includeFontPadding="false" />
+
+                    <TextView
+                        android:id="@+id/segHttp"
+                        android:layout_width="0dp"
+                        android:layout_height="34dp"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/text_secondary"
+                        android:text="HTTP"
+                        android:includeFontPadding="false" />
+
+                    <TextView
+                        android:id="@+id/segHttps"
+                        android:layout_width="0dp"
+                        android:layout_height="34dp"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/text_secondary"
+                        android:text="HTTPS"
+                        android:includeFontPadding="false" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Host -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/proxy_host_hint"
-                android:importantForAutofill="no"
-                android:inputType="textUri"
-                android:maxLines="1" />
+                android:layout_marginTop="@dimen/space_4"
+                android:orientation="vertical">
 
-            <EditText
-                android:id="@+id/proxyPort"
+                <TextView
+                    style="@style/Nc.FieldLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/proxy_host" />
+
+                <EditText
+                    android:id="@+id/host"
+                    style="@style/Nc.Input"
+                    android:layout_marginTop="6dp"
+                    android:hint="@string/proxy_host_hint"
+                    android:inputType="textUri"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <!-- Port and user side by side: both are short, neither needs a full row -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/proxy_port_hint"
-                android:importantForAutofill="no"
-                android:inputType="number"
-                android:maxLines="1" />
+                android:layout_marginTop="@dimen/space_4"
+                android:orientation="horizontal">
 
-            <EditText
-                android:id="@+id/proxyUser"
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Nc.FieldLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/proxy_port" />
+
+                    <EditText
+                        android:id="@+id/port"
+                        style="@style/Nc.Input"
+                        android:layout_marginTop="6dp"
+                        android:hint="@string/proxy_port_hint"
+                        android:inputType="number"
+                        android:fontFamily="monospace" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_3"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Nc.FieldLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/proxy_user" />
+
+                    <EditText
+                        android:id="@+id/user"
+                        style="@style/Nc.Input"
+                        android:layout_marginTop="6dp"
+                        android:hint="@string/other"
+                        android:inputType="text"
+                        android:fontFamily="monospace" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Password -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/proxy_user"
-                android:importantForAutofill="no"
-                android:inputType="text"
-                android:maxLines="1" />
+                android:layout_marginTop="@dimen/space_4"
+                android:orientation="vertical">
 
-            <EditText
-                android:id="@+id/proxyPass"
+                <TextView
+                    style="@style/Nc.FieldLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/proxy_pass" />
+
+                <EditText
+                    android:id="@+id/pass"
+                    style="@style/Nc.Input"
+                    android:layout_marginTop="6dp"
+                    android:inputType="textPassword"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <!-- Profile name -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/proxy_pass"
-                android:importantForAutofill="no"
-                android:inputType="textPassword"
-                android:maxLines="1" />
+                android:layout_marginTop="@dimen/space_4"
+                android:orientation="vertical">
 
-            <Button
-                android:id="@+id/btnSave"
-                style="@style/Button.Primary"
+                <TextView
+                    style="@style/Nc.FieldLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/proxy_name" />
+
+                <EditText
+                    android:id="@+id/name"
+                    style="@style/Nc.Input"
+                    android:layout_marginTop="6dp"
+                    android:hint="@string/proxy_name_hint" />
+            </LinearLayout>
+
+            <!-- Validation error, inline under the fields it refers to -->
+            <LinearLayout
+                android:id="@+id/errorLine"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/save" />
+                android:layout_marginTop="@dimen/space_2"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone">
 
-            <Button
-                android:id="@+id/btnDelete"
-                style="@style/Button.Secondary"
+                <ImageView
+                    android:layout_width="13dp"
+                    android:layout_height="13dp"
+                    android:src="@drawable/ic_nc_alert"
+                    android:tint="@color/danger"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/errorText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="5dp"
+                    android:textSize="11sp"
+                    android:textColor="@color/danger"
+                    android:includeFontPadding="false" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/delete" />
+                android:layout_marginTop="@dimen/space_5"
+                android:orientation="horizontal">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/recycler"
+                <TextView
+                    android:id="@+id/btnTest"
+                    style="@style/Nc.Button.Ghost"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/button_height"
+                    android:layout_weight="1"
+                    android:text="Test"
+                    android:drawableStart="@drawable/ic_nc_refresh"
+                    android:drawablePadding="@dimen/space_2"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/btnSave"
+                    style="@style/Nc.Button.Primary"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/button_height"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_2"
+                    android:text="@string/save"
+                    android:gravity="center" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/btnClear"
+                style="@style/Nc.Button.Ghost"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:nestedScrollingEnabled="false" />
-
+                android:layout_height="@dimen/button_height"
+                android:layout_marginTop="@dimen/space_2"
+                android:text="@string/proxy_none"
+                android:gravity="center" />
         </LinearLayout>
-
     </ScrollView>
-
 </LinearLayout>

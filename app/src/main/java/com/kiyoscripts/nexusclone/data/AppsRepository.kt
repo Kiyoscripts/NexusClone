@@ -10,9 +10,11 @@ import androidx.lifecycle.MutableLiveData
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.utils.AbiUtils
 import com.kiyoscripts.nexusclone.R
+import com.kiyoscripts.nexusclone.app.App
 import com.kiyoscripts.nexusclone.app.AppManager
 import com.kiyoscripts.nexusclone.bean.AppInfo
 import com.kiyoscripts.nexusclone.bean.InstalledAppBean
+import com.kiyoscripts.nexusclone.core.instance.InstanceManager
 import com.kiyoscripts.nexusclone.util.MemoryManager
 import com.kiyoscripts.nexusclone.util.inflate
 import com.kiyoscripts.nexusclone.util.getString
@@ -154,6 +156,39 @@ class AppsRepository {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in previewInstallList: ${e.message}")
+        }
+    }
+
+    /**
+     * The installed-app list as picker rows, with no per-user install state.
+     *
+     * [getInstalledAppList] answers "is this package already cloned into user N", which
+     * needs a virtual user id. The redesigned picker is not scoped to a user: a clone
+     * allocates its own user, so the only question the row asks is whether the package has
+     * been cloned at all. That is answered here from the instance store, not from the
+     * engine, so this call does not touch the :black process.
+     *
+     * Call [previewInstallList] first; this reads the list it populated.
+     */
+    fun installedAppsSnapshot(): List<InstalledAppBean> {
+        val cloned: Set<String> = try {
+            InstanceManager.get(App.getContext()).snapshot()
+                .mapTo(HashSet()) { it.packageName }
+        } catch (e: Exception) {
+            Log.w(TAG, "could not read clone list: ${e.message}")
+            emptySet()
+        }
+
+        return synchronized(mInstalledList) {
+            mInstalledList.map {
+                InstalledAppBean(
+                    it.name,
+                    it.icon,
+                    it.packageName,
+                    it.sourceDir,
+                    it.packageName in cloned
+                )
+            }
         }
     }
 

@@ -1,67 +1,720 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Main screen: one page per virtual user, each page an app grid.
+  Main shell: three tabs, one page container each.
 
-  The StateView that used to sit here was bound in code and never shown — it was
-  a leftover from the upstream fork, and because it was declared before the
-  ViewPager it also occupied the same constraint slot. It is gone. The empty
-  state now lives inside each AppsFragment page, where it belongs, because
-  "this user has no apps" is a per-page condition, not a whole-screen one.
+  This replaces the ViewPager2-over-virtual-users layout. That model made the virtual
+  user the primary object and buried the clone inside it, so reaching a clone meant
+  swiping to the right user page and then finding the app icon. The clone is now the
+  primary object: Clones is a grid of clones, Apps is a picker, Settings is settings.
 
-  The dots indicator is hidden when there is only one page: a single dot under a
-  single page is noise. MainActivity toggles it.
+  Three plain page containers rather than a ViewPager2 + FragmentStateAdapter: the tab
+  set is fixed at three, switching is instant, and there is no swipe gesture to keep in
+  sync with the tab bar. Fragments would add a lifecycle to coordinate for no gain.
+
+  The FAB lives in the CoordinatorLayout, not in a page, so it stays put across tabs and
+  is hidden by code on the tabs where it has no meaning.
 -->
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:app="http://schemas.android.com/apk/res-auto"
-        xmlns:tools="http://schemas.android.com/tools"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/surface"
+    tools:context=".view.main.MainActivity">
+
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/surface"
-        tools:context=".view.main.MainActivity">
+        android:fitsSystemWindows="true"
+        android:orientation="vertical">
 
-    <include
-            android:id="@+id/toolbar_layout"
-            layout="@layout/view_toolbar"
+        <!-- App bar -->
+        <FrameLayout
+            android:id="@+id/appbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:layout_constraintTop_toTopOf="parent" />
+            android:paddingStart="@dimen/gutter"
+            android:paddingTop="@dimen/space_2"
+            android:paddingEnd="@dimen/gutter"
+            android:paddingBottom="@dimen/space_3">
 
-    <androidx.viewpager2.widget.ViewPager2
-            android:id="@+id/viewPager"
-            android:layout_width="0dp"
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/title"
+                        style="@style/Nc.AppBarTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/nav_instances" />
+
+                    <TextView
+                        android:id="@+id/subtitle"
+                        style="@style/Nc.AppBarSub"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        tools:text="4 clones · 2 running" />
+                </LinearLayout>
+
+                <ImageView
+                    android:id="@+id/btnMore"
+                    style="@style/Nc.IconButton"
+                    android:contentDescription="@string/other"
+                    android:src="@drawable/ic_nc_more_vert" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <!-- Page host -->
+        <FrameLayout
+            android:layout_width="match_parent"
             android:layout_height="0dp"
-            app:layout_constraintBottom_toTopOf="@id/dots_indicator"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/toolbar_layout" />
+            android:layout_weight="1"
+            android:minHeight="0dp">
 
-    <com.tbuonomo.viewpagerdotsindicator.WormDotsIndicator
-            android:id="@+id/dots_indicator"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            app:dotsColor="@color/primary_light"
-            app:dotsCornerRadius="4dp"
-            app:dotsSize="8dp"
-            app:dotsSpacing="4dp"
-            app:dotsWidthFactor="2.5"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:progressMode="true"
-            app:selectedDotColor="@color/primary" />
+            <!-- ============ PAGE: CLONES ============ -->
+            <LinearLayout
+                android:id="@+id/pageClones"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/gutter"
+                android:paddingEnd="@dimen/gutter">
+
+                <include
+                    android:id="@+id/statusStrip"
+                    layout="@layout/view_status_strip"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_marginTop="@dimen/space_3"
+                    android:layout_weight="1"
+                    android:minHeight="0dp">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/cloneGrid"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:clipToPadding="false"
+                        android:paddingBottom="@dimen/body_bottom_inset"
+                        android:scrollbars="none" />
+
+                    <LinearLayout
+                        android:id="@+id/clonesEmpty"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center_horizontal"
+                        android:orientation="vertical"
+                        android:paddingStart="@dimen/space_7"
+                        android:paddingEnd="@dimen/space_7"
+                        android:visibility="gone">
+
+                        <ImageView
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_nc_layers"
+                            android:tint="@color/text_tertiary" />
+
+                        <TextView
+                            style="@style/Text.Headline"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center_horizontal"
+                            android:layout_marginTop="@dimen/space_4"
+                            android:gravity="center"
+                            android:text="@string/instances_empty" />
+
+                        <TextView
+                            style="@style/Text.Caption"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center_horizontal"
+                            android:layout_marginTop="@dimen/space_2"
+                            android:gravity="center"
+                            android:text="@string/apps_empty_body" />
+                    </LinearLayout>
+
+                    <ProgressBar
+                        android:id="@+id/clonesProgress"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:visibility="gone" />
+                </FrameLayout>
+            </LinearLayout>
+
+            <!-- ============ PAGE: APPS ============ -->
+            <LinearLayout
+                android:id="@+id/pageApps"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/gutter"
+                android:paddingEnd="@dimen/gutter"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/input_height"
+                    android:background="@drawable/bg_input"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="@dimen/space_3"
+                    android:paddingEnd="@dimen/space_3">
+
+                    <ImageView
+                        android:layout_width="17dp"
+                        android:layout_height="17dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_nc_search"
+                        android:tint="@color/text_tertiary" />
+
+                    <EditText
+                        android:id="@+id/appSearch"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="@dimen/space_2"
+                        android:layout_weight="1"
+                        android:background="@null"
+                        android:hint="@string/choose_app"
+                        android:imeOptions="actionSearch"
+                        android:includeFontPadding="false"
+                        android:inputType="text"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_tertiary"
+                        android:textSize="14sp" />
+
+                    <ImageView
+                        android:id="@+id/appSearchClear"
+                        android:layout_width="15dp"
+                        android:layout_height="15dp"
+                        android:contentDescription="@string/close"
+                        android:src="@drawable/ic_nc_close"
+                        android:tint="@color/text_tertiary"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/appChips"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_3"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/chipAll"
+                        style="@style/Nc.Chip"
+                        android:layout_marginEnd="@dimen/space_2"
+                        android:background="@drawable/bg_chip_on"
+                        android:text="All"
+                        android:textColor="@color/text_on_accent" />
+
+                    <TextView
+                        android:id="@+id/chipUser"
+                        style="@style/Nc.Chip"
+                        android:layout_marginEnd="@dimen/space_2"
+                        android:text="User" />
+
+                    <TextView
+                        android:id="@+id/chipSystem"
+                        style="@style/Nc.Chip"
+                        android:text="System" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_marginTop="@dimen/space_3"
+                    android:layout_weight="1"
+                    android:minHeight="0dp">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/appList"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:clipToPadding="false"
+                        android:paddingBottom="@dimen/body_bottom_inset"
+                        android:scrollbars="none" />
+
+                    <LinearLayout
+                        android:id="@+id/appsEmpty"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center_horizontal"
+                        android:orientation="vertical"
+                        android:paddingStart="@dimen/space_7"
+                        android:paddingEnd="@dimen/space_7"
+                        android:visibility="gone">
+
+                        <ImageView
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_nc_grid"
+                            android:tint="@color/text_tertiary" />
+
+                        <TextView
+                            style="@style/Text.Headline"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center_horizontal"
+                            android:layout_marginTop="@dimen/space_4"
+                            android:gravity="center"
+                            android:text="@string/apps_empty_title" />
+
+                        <TextView
+                            style="@style/Text.Caption"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center_horizontal"
+                            android:layout_marginTop="@dimen/space_2"
+                            android:gravity="center"
+                            android:text="@string/apps_empty_body" />
+                    </LinearLayout>
+
+                    <ProgressBar
+                        android:id="@+id/appsProgress"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:visibility="gone" />
+                </FrameLayout>
+            </LinearLayout>
+
+            <!-- ============ PAGE: SETTINGS ============ -->
+            <ScrollView
+                android:id="@+id/pageSettings"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:scrollbars="none"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="@dimen/gutter"
+                    android:paddingEnd="@dimen/gutter"
+                    android:paddingBottom="@dimen/body_bottom_inset">
+
+                    <TextView
+                        style="@style/Nc.SectionHead"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="System" />
+
+                    <LinearLayout
+                        style="@style/Nc.Card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_2">
+
+                        <LinearLayout
+                            android:id="@+id/rowDiagnostics"
+                            style="@style/Nc.ListRow">
+
+                            <FrameLayout style="@style/Nc.IconTile">
+
+                                <ImageView
+                                    android:layout_width="17dp"
+                                    android:layout_height="17dp"
+                                    android:layout_gravity="center"
+                                    android:contentDescription="@null"
+                                    android:src="@drawable/ic_nc_cpu"
+                                    android:tint="@color/accent" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/diag_title" />
+
+                                <TextView
+                                    android:id="@+id/subDiagnostics"
+                                    style="@style/Text.Caption"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    tools:text="10 of 12 checks passing" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/badgeDiagnostics"
+                                style="@style/Nc.Badge"
+                                android:backgroundTint="@color/warn_soft"
+                                android:textColor="@color/warn"
+                                android:visibility="gone"
+                                tools:text="2" />
+
+                            <ImageView
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:layout_marginStart="@dimen/space_2"
+                                android:contentDescription="@null"
+                                android:src="@drawable/ic_nc_chevron_right"
+                                android:tint="@color/text_tertiary" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/rowProxy"
+                            style="@style/Nc.ListRow">
+
+                            <FrameLayout style="@style/Nc.IconTile">
+
+                                <ImageView
+                                    android:layout_width="17dp"
+                                    android:layout_height="17dp"
+                                    android:layout_gravity="center"
+                                    android:contentDescription="@null"
+                                    android:src="@drawable/ic_nc_globe"
+                                    android:tint="@color/accent" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Default proxy" />
+
+                                <TextView
+                                    android:id="@+id/subProxy"
+                                    style="@style/Text.Caption"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    tools:text="socks5://10.0.0.4:1080" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:layout_marginStart="@dimen/space_2"
+                                android:contentDescription="@null"
+                                android:src="@drawable/ic_nc_chevron_right"
+                                android:tint="@color/text_tertiary" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/rowGms"
+                            style="@style/Nc.ListRow">
+
+                            <FrameLayout style="@style/Nc.IconTile">
+
+                                <ImageView
+                                    android:layout_width="17dp"
+                                    android:layout_height="17dp"
+                                    android:layout_gravity="center"
+                                    android:contentDescription="@null"
+                                    android:src="@drawable/ic_nc_shield"
+                                    android:tint="@color/accent" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/gms_manager" />
+
+                                <TextView
+                                    android:id="@+id/subGms"
+                                    style="@style/Text.Caption"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    tools:text="Install GMS into a clone" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:layout_marginStart="@dimen/space_2"
+                                android:contentDescription="@null"
+                                android:src="@drawable/ic_nc_chevron_right"
+                                android:tint="@color/text_tertiary" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/Nc.SectionHead"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_5"
+                        android:text="Behaviour" />
+
+                    <LinearLayout
+                        style="@style/Nc.Card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_2">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingStart="@dimen/space_4"
+                            android:paddingTop="@dimen/space_3"
+                            android:paddingEnd="@dimen/space_4"
+                            android:paddingBottom="@dimen/space_3">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/keepalive_title" />
+
+                                <TextView
+                                    style="@style/Text.Caption"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="@string/keepalive_text" />
+                            </LinearLayout>
+
+                            <Switch
+                                android:id="@+id/switchKeepAlive"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:thumbTint="@color/accent_strong"
+                                android:trackTint="@color/accent_soft" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingStart="@dimen/space_4"
+                            android:paddingTop="@dimen/space_3"
+                            android:paddingEnd="@dimen/space_4"
+                            android:paddingBottom="@dimen/space_3">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Capture previews" />
+
+                                <TextView
+                                    style="@style/Text.Caption"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="Screenshot each clone on pause" />
+                            </LinearLayout>
+
+                            <Switch
+                                android:id="@+id/switchPreview"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:thumbTint="@color/accent_strong"
+                                android:trackTint="@color/accent_soft" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/Nc.SectionHead"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_5"
+                        android:text="About" />
+
+                    <LinearLayout
+                        style="@style/Nc.Card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_2"
+                        android:paddingTop="@dimen/space_1"
+                        android:paddingBottom="@dimen/space_1">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingStart="@dimen/space_4"
+                            android:paddingTop="9dp"
+                            android:paddingEnd="@dimen/space_4"
+                            android:paddingBottom="9dp">
+
+                            <TextView
+                                android:layout_width="84dp"
+                                android:layout_height="wrap_content"
+                                android:text="Version"
+                                android:textColor="@color/text_tertiary"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:id="@+id/specVersion"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:fontFamily="monospace"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp"
+                                tools:text="3.0.7 (build 53)" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingStart="@dimen/space_4"
+                            android:paddingTop="9dp"
+                            android:paddingEnd="@dimen/space_4"
+                            android:paddingBottom="9dp">
+
+                            <TextView
+                                android:layout_width="84dp"
+                                android:layout_height="wrap_content"
+                                android:text="Device"
+                                android:textColor="@color/text_tertiary"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:id="@+id/specDevice"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:fontFamily="monospace"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp"
+                                tools:text="vivo V2032 · SDK 31" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+        </FrameLayout>
+
+        <!-- Tab bar -->
+        <LinearLayout
+            android:id="@+id/tabbar"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/tabbar_height"
+            android:background="@color/surface"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:id="@+id/tabClones"
+                style="@style/Nc.Tab">
+
+                <ImageView
+                    android:id="@+id/tabClonesIcon"
+                    style="@style/Nc.TabIcon"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_nc_layers" />
+
+                <TextView
+                    android:id="@+id/tabClonesLabel"
+                    style="@style/Nc.TabLabel"
+                    android:text="@string/nav_instances" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tabApps"
+                style="@style/Nc.Tab">
+
+                <ImageView
+                    android:id="@+id/tabAppsIcon"
+                    style="@style/Nc.TabIcon"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_nc_grid" />
+
+                <TextView
+                    android:id="@+id/tabAppsLabel"
+                    style="@style/Nc.TabLabel"
+                    android:text="@string/nav_apps" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tabSettings"
+                style="@style/Nc.Tab">
+
+                <ImageView
+                    android:id="@+id/tabSettingsIcon"
+                    style="@style/Nc.TabIcon"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_nc_sliders" />
+
+                <TextView
+                    android:id="@+id/tabSettingsLabel"
+                    style="@style/Nc.TabLabel"
+                    android:text="@string/nav_settings" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Gesture inset strip -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="22dp"
+            android:background="@color/surface" />
+    </LinearLayout>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fab"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="20dp"
-            android:layout_marginBottom="20dp"
-            android:contentDescription="@string/fab_clone_app"
-            android:src="@drawable/ic_add"
-            app:backgroundTint="@color/primary"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:tint="@color/text_on_brand" />
+        android:id="@+id/fab"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="@dimen/gutter"
+        android:layout_marginBottom="96dp"
+        android:contentDescription="@string/fab_clone_app"
+        android:src="@drawable/ic_nc_plus"
+        app:backgroundTint="@color/accent_strong"
+        app:borderWidth="0dp"
+        app:elevation="0dp"
+        app:maxImageSize="24dp"
+        app:tint="@color/text_on_accent" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

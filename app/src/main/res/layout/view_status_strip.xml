@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status strip: a single line of live state above a list.
+
+  The dot is tinted at runtime (success / warn / danger) and the meta slot on the
+  right carries a monospace figure that must not jitter as it changes.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_input"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="@dimen/space_3"
+    android:paddingEnd="@dimen/space_3"
+    android:paddingTop="9dp"
+    android:paddingBottom="9dp">
+
+    <View
+        android:id="@+id/dot"
+        android:layout_width="7dp"
+        android:layout_height="7dp"
+        android:background="@drawable/bg_dot"
+        android:backgroundTint="@color/success" />
+
+    <TextView
+        android:id="@+id/text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_2"
+        android:textSize="12sp"
+        android:textColor="@color/text_primary"
+        android:textStyle="bold"
+        android:includeFontPadding="false"
+        tools:text="All clones healthy" />
+
+    <View
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/meta"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:textColor="@color/text_tertiary"
+        android:includeFontPadding="false"
+        tools:text="3/3" />
+
+</LinearLayout>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Card surface on the canvas colour, for cards that sit on a raised parent. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface" />
+    <corners android:radius="@dimen/radius_card" />
+    <stroke
+        android:width="@dimen/hairline"
+        android:color="@color/hairline" />
+</shape>

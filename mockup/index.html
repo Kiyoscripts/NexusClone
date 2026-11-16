@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0B0B10" />
+<title>NexusClone - UI mockup</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z"/><path d="M3 12.5 12 17l9-4.5"/><path d="M3 17 12 21.5 21 17"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7.5h9"/><path d="M17.5 7.5H20"/><path d="M4 16.5h3.5"/><path d="M12 16.5h8"/><circle cx="15.2" cy="7.5" r="2.3"/><circle cx="9.7" cy="16.5" r="2.3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13"/><path d="M5.5 12h13"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="18.5" r="1.4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8.5 5.5v13l10.5-6.5-10.5-6.5Z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2.2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.8l4.4 4.4L19 6.6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.2 2.8 20h18.4L12 4.2Z"/><path d="M12 10v4.2"/><circle cx="12" cy="17.2" r="0.9"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11"/><path d="M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5S14.4 18.1 12 20.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.2 19 6v6.1c0 4.4-2.9 7.4-7 8.7-4.1-1.3-7-4.3-7-8.7V6l7-2.8Z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15"/><path d="M9.5 7V4.8h5V7"/><path d="M6.5 7l1 12.5h9L17.5 7"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.2 14.6A8.6 8.6 0 0 1 9.4 3.8a8.6 8.6 0 1 0 10.8 10.8Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.8v2.2"/><path d="M12 19v2.2"/><path d="M2.8 12H5"/><path d="M19 12h2.2"/><path d="M5.5 5.5 7 7"/><path d="M17 17l1.5 1.5"/><path d="M18.5 5.5 17 7"/><path d="M7 17l-1.5 1.5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4.2v5h-5"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.2 3 5.5 13.8h5.6L10.8 21l7.7-10.8h-5.6L13.2 3Z"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/><path d="M10 3.5v3"/><path d="M14 3.5v3"/><path d="M10 17.5v3"/><path d="M14 17.5v3"/><path d="M3.5 10h3"/><path d="M3.5 14h3"/><path d="M17.5 10h3"/><path d="M17.5 14h3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h3.6l2 2.4h7.4a2 2 0 0 1 2 2v7.6a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7.5Z"/></symbol>
+</svg>
+
+<div class="stage">
+
+  <aside class="rail" aria-label="Mockup screens">
+    <div class="rail-head">
+      <div class="rail-mark">N</div>
+      <div>
+        <div class="rail-title">NexusClone</div>
+        <div class="rail-sub">UI mockup v1</div>
+      </div>
+    </div>
+
+    <nav class="rail-nav">
+      <button class="rail-btn" data-go="clones"><span class="rail-num">01</span>Clones</button>
+      <button class="rail-btn" data-go="detail"><span class="rail-num">02</span>Clone detail</button>
+      <button class="rail-btn" data-go="apps"><span class="rail-num">03</span>Apps</button>
+      <button class="rail-btn" data-go="proxy"><span class="rail-num">04</span>Proxy</button>
+      <button class="rail-btn" data-go="diag"><span class="rail-num">05</span>Diagnostics</button>
+      <button class="rail-btn" data-go="settings"><span class="rail-num">06</span>Settings</button>
+    </nav>
+
+    <div class="rail-foot">
+      <button class="theme-btn" id="themeBtn">
+        <svg class="icon"><use href="#i-moon"/></svg>
+        <span id="themeLabel">Dark</span>
+      </button>
+      <p class="rail-note">Three tabs: Clones, Apps, Settings. Proxy and Diagnostics are reached from Settings and from the clone detail.</p>
+    </div>
+  </aside>
+
+  <div class="device" id="device">
+
+    <div class="statusbar">
+      <span class="sb-time">9:41</span>
+      <span class="sb-right">
+        <span class="sb-bars"><i></i><i></i><i></i><i></i></span>
+        <span class="sb-wifi"></span>
+        <span class="sb-batt"><b></b></span>
+      </span>
+    </div>
+
+    <main class="screens" id="screens">
+
+      <!-- ============ 01 CLONES ============ -->
+      <section class="screen" id="s-clones" aria-label="Clones">
+        <header class="appbar">
+          <div class="appbar-lead">
+            <h1 class="appbar-title">Clones</h1>
+            <p class="appbar-sub">4 clones &middot; 2 running</p>
+          </div>
+          <button class="iconbtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+        </header>
+
+        <div class="body">
+          <div class="statusstrip">
+            <span class="dot dot-ok"></span>
+            <span class="statusstrip-text">Engine ready</span>
+            <span class="statusstrip-sep"></span>
+            <span class="statusstrip-meta">233 ms init</span>
+          </div>
+
+          <div class="grid">
+            <button class="clone" data-go="detail">
+              <div class="clone-preview p1">
+                <span class="clone-glyph">W</span>
+                <span class="clone-live"><i></i>Live</span>
+              </div>
+              <div class="clone-meta">
+                <span class="clone-name">Work</span>
+                <span class="clone-pkg">com.whatsapp</span>
+              </div>
+            </button>
+
+            <button class="clone" data-go="detail">
+              <div class="clone-preview p2">
+                <span class="clone-glyph">A</span>
+                <span class="clone-live"><i></i>Live</span>
+              </div>
+              <div class="clone-meta">
+                <span class="clone-name">Alt Account</span>
+                <span class="clone-pkg">com.instagram.android</span>
+              </div>
+            </button>
+
+            <button class="clone" data-go="detail">
+              <div class="clone-preview p3">
+                <span class="clone-glyph">G</span>
+              </div>
+              <div class="clone-meta">
+                <span class="clone-name">Gaming</span>
+                <span class="clone-pkg">com.sandboxol.blockymods</span>
+              </div>
+            </button>
+
+            <button class="clone" data-go="detail">
+              <div class="clone-preview p4">
+                <span class="clone-glyph">T</span>
+              </div>
+              <div class="clone-meta">
+                <span class="clone-name">Testing</span>
+                <span class="clone-pkg">com.kiyoscripts.nexusclone</span>
+              </div>
+            </button>
+          </div>
+
+          <div class="section-head">
+            <h2 class="section-title">Recent</h2>
+            <button class="linkbtn">Clear</button>
+          </div>
+
+          <ul class="rows">
+            <li class="row">
+              <span class="row-ico"><svg class="icon"><use href="#i-play"/></svg></span>
+              <span class="row-main">
+                <span class="row-title">Work launched</span>
+                <span class="row-sub">2 minutes ago</span>
+              </span>
+            </li>
+            <li class="row">
+              <span class="row-ico"><svg class="icon"><use href="#i-shield"/></svg></span>
+              <span class="row-main">
+                <span class="row-title">Identity applied to Alt Account</span>
+                <span class="row-sub">Pixel 7 &middot; 14 minutes ago</span>
+              </span>
+            </li>
+            <li class="row">
+              <span class="row-ico"><svg class="icon"><use href="#i-globe"/></svg></span>
+              <span class="row-main">
+                <span class="row-title">Proxy set on Gaming</span>
+                <span class="row-sub">socks5 &middot; 1 hour ago</span>
+              </span>
+            </li>
+          </ul>
+        </div>
+
+        <button class="fab" aria-label="New clone"><svg class="icon"><use href="#i-plus"/></svg></button>
+      </section>
+
+      <!-- ============ 02 CLONE DETAIL ============ -->
+      <section class="screen" id="s-detail" aria-label="Clone detail">
+        <header class="appbar appbar-back">
+          <button class="iconbtn" data-go="clones" aria-label="Back"><svg class="icon"><use href="#i-back"/></svg></button>
+          <div class="appbar-lead">
+            <h1 class="appbar-title">Work</h1>
+            <p class="appbar-sub mono">com.whatsapp</p>
+          </div>
+          <button class="iconbtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+        </header>
+
+        <div class="body">
+          <div class="hero">
+            <div class="hero-preview p1"><span class="clone-glyph">W</span></div>
+            <div class="hero-side">
+              <span class="pill pill-live"><i></i>Running</span>
+              <span class="hero-stat"><b>2h 14m</b><em>uptime</em></span>
+              <span class="hero-stat"><b>184 MB</b><em>memory</em></span>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary"><svg class="icon"><use href="#i-play"/></svg>Launch</button>
+            <button class="btn btn-ghost"><svg class="icon"><use href="#i-stop"/></svg>Stop</button>
+          </div>
+
+          <div class="section-head"><h2 class="section-title">Configuration</h2></div>
+
+          <div class="card">
+            <button class="listrow" data-go="proxy">
+              <span class="listrow-ico"><svg class="icon"><use href="#i-globe"/></svg></span>
+              <span class="listrow-main">
+                <span class="listrow-title">Proxy</span>
+                <span class="listrow-sub mono">socks5://10.0.0.4:1080</span>
+              </span>
+              <span class="badge badge-ok">On</span>
+              <svg class="icon chev"><use href="#i-chev"/></svg>
+            </button>
+
+            <button class="listrow">
+              <span class="listrow-ico"><svg class="icon"><use href="#i-shield"/></svg></span>
+              <span class="listrow-main">
+                <span class="listrow-title">Device identity</span>
+                <span class="listrow-sub">Pixel 7 &middot; Android 14</span>
+              </span>
+              <svg class="icon chev"><use href="#i-chev"/></svg>
+            </button>
+
+            <button class="listrow">
+              <span class="listrow-ico"><svg class="icon"><use href="#i-folder"/></svg></span>
+              <span class="listrow-main">
+                <span class="listrow-title">Backup</span>
+                <span class="listrow-sub">Last saved 3 days ago</span>
+              </span>
+              <svg class="icon chev"><use href="#i-chev"/></svg>
+            </button>
+
+            <button class="listrow">
+              <span class="listrow-ico"><svg class="icon"><use href="#i-bolt"/></svg></span>
+              <span class="listrow-main">
+                <span class="listrow-title">Macros</span>
+                <span class="listrow-sub">2 recorded</span>
+              </span>
+              <svg class="icon chev"><use href="#i-chev"/></svg>
+            </button>
+          </div>
+
+          <div class="section-head"><h2 class="section-title">Identity</h2></div>
+
+          <div class="card spec">
+            <div class="spec-row"><span class="spec-k">Model</span><span class="spec-v mono">Pixel 7</span></div>
+            <div class="spec-row"><span class="spec-k">Android</span><span class="spec-v mono">14 (SDK 34)</span></div>
+            <div class="spec-row"><span class="spec-k">IMEI</span><span class="spec-v mono">490154203237518</span></div>
+            <div class="spec-row"><span class="spec-k">MAC</span><span class="spec-v mono">3C:5A:B4:1F:88:02</span></div>
+            <div class="spec-row"><span class="spec-k">Serial</span><span class="spec-v mono">1A2B3C4D5E6F</span></div>
+          </div>
+
+          <button class="btn btn-danger-ghost"><svg class="icon"><use href="#i-trash"/></svg>Delete clone</button>
+        </div>
+      </section>
+
+      <!-- ============ 03 APPS ============ -->
+      <section class="screen" id="s-apps" aria-label="Apps">
+        <header class="appbar">
+          <div class="appbar-lead">
+            <h1 class="appbar-title">Apps</h1>
+            <p class="appbar-sub">Pick an app to clone</p>
+          </div>
+        </header>
+
+        <div class="body">
+          <div class="searchbar">
+            <svg class="icon"><use href="#i-search"/></svg>
+            <input type="text" placeholder="Search installed apps" aria-label="Search installed apps" />
+            <button class="searchbar-x" aria-label="Clear"><svg class="icon"><use href="#i-x"/></svg></button>
+          </div>
+
+          <div class="chips">
+            <button class="chip chip-on">All</button>
+            <button class="chip">User</button>
+            <button class="chip">System</button>
+            <button class="chip">Cloned</button>
+          </div>
+
+          <div class="section-head"><h2 class="section-title">Installed</h2><span class="section-count">128</span></div>
+
+          <ul class="rows rows-flush">
+            <li class="approw">
+              <span class="approw-ico a1">W</span>
+              <span class="approw-main">
+                <span class="approw-title">WhatsApp</span>
+                <span class="approw-pkg mono">com.whatsapp</span>
+              </span>
+              <span class="badge badge-muted">1 clone</span>
+              <button class="iconbtn iconbtn-sm" aria-label="Clone WhatsApp"><svg class="icon"><use href="#i-plus"/></svg></button>
+            </li>
+            <li class="approw">
+              <span class="approw-ico a2">I</span>
+              <span class="approw-main">
+                <span class="approw-title">Instagram</span>
+                <span class="approw-pkg mono">com.instagram.android</span>
+              </span>
+              <span class="badge badge-muted">1 clone</span>
+              <button class="iconbtn iconbtn-sm" aria-label="Clone Instagram"><svg class="icon"><use href="#i-plus"/></svg></button>
+            </li>
+            <li class="approw">
+              <span class="approw-ico a3">B</span>
+              <span class="approw-main">
+                <span class="approw-title">Blockman GO</span>
+                <span class="approw-pkg mono">com.sandboxol.blockymods</span>
+              </span>
+              <span class="badge badge-muted">1 clone</span>
+              <button class="iconbtn iconbtn-sm" aria-label="Clone Blockman GO"><svg class="icon"><use href="#i-plus"/></svg></button>
+            </li>
+            <li class="approw">
+              <span class="approw-ico a4">T</span>
+              <span class="approw-main">
+                <span class="approw-title">Telegram</span>
+                <span class="approw-pkg mono">org.telegram.messenger</span>
+              </span>
+              <button class="iconbtn iconbtn-sm" aria-label="Clone Telegram"><svg class="icon"><use href="#i-plus"/></svg></button>
+            </li>
+            <li class="approw">
+              <span class="approw-ico a5">Y</span>
+              <span class="approw-main">
+                <span class="approw-title">YouTube</span>
+                <span class="approw-pkg mono">com.google.android.youtube</span>
+              </span>
+              <button class="iconbtn iconbtn-sm" aria-label="Clone YouTube"><svg class="icon"><use href="#i-plus"/></svg></button>
+            </li>
+            <li class="approw">
+              <span class="approw-ico a6">M</span>
+              <span class="approw-main">
+                <span class="approw-title">Maps</span>
+                <span class="approw-pkg mono">com.google.android.apps.maps</span>
+              </span>
+              <button class="iconbtn iconbtn-sm" aria-label="Clone Maps"><svg class="icon"><use href="#i-plus"/></svg></button>
+            </li>
+          </ul>
+
+        </div>
+      </section>
+
+      <!-- ============ 04 PROXY ============ -->
+      <section class="screen" id="s-proxy" aria-label="Proxy">
+        <header class="appbar appbar-back">
+          <button class="iconbtn" data-go="detail" aria-label="Back"><svg class="icon"><use href="#i-back"/></svg></button>
+          <div class="appbar-lead">
+            <h1 class="appbar-title">Proxy</h1>
+            <p class="appbar-sub">Work &middot; com.whatsapp</p>
+          </div>
+        </header>
+
+        <div class="body">
+          <div class="card card-pad">
+            <div class="switchrow">
+              <span class="switchrow-main">
+                <span class="switchrow-title">Route through proxy</span>
+                <span class="switchrow-sub">Applies to this clone only</span>
+              </span>
+              <button class="switch switch-on" role="switch" aria-checked="true" aria-label="Route through proxy"><i></i></button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="p-type">Type</label>
+            <div class="segmented" id="p-type">
+              <button class="seg seg-on">SOCKS5</button>
+              <button class="seg">HTTP</button>
+              <button class="seg">HTTPS</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="p-host">Host</label>
+            <input class="input mono" id="p-host" value="10.0.0.4" />
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label class="field-label" for="p-port">Port</label>
+              <input class="input mono" id="p-port" value="1080" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="p-user">Username</label>
+              <input class="input mono" id="p-user" placeholder="optional" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="p-pass">Password</label>
+            <input class="input mono" id="p-pass" type="password" value="hunter2hunter2" />
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="p-bad">Bypass list</label>
+            <input class="input mono input-error" id="p-bad" value="10.0.0.4:1080x" />
+            <p class="field-error"><svg class="icon"><use href="#i-alert"/></svg>Port must be 1-65535</p>
+          </div>
+
+          <div class="card card-pad testcard">
+            <div class="testcard-head">
+              <span class="testcard-title">Connection test</span>
+              <span class="badge badge-ok">Passed</span>
+            </div>
+            <div class="testcard-grid">
+              <span class="testcard-k">Exit IP</span><span class="testcard-v mono">203.0.113.42</span>
+              <span class="testcard-k">Country</span><span class="testcard-v mono">SG</span>
+              <span class="testcard-k">Latency</span><span class="testcard-v mono">184 ms</span>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary"><svg class="icon"><use href="#i-refresh"/></svg>Test</button>
+            <button class="btn btn-ghost">Save</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 05 DIAGNOSTICS ============ -->
+      <section class="screen" id="s-diag" aria-label="Diagnostics">
+        <header class="appbar appbar-back">
+          <button class="iconbtn" data-go="settings" aria-label="Back"><svg class="icon"><use href="#i-back"/></svg></button>
+          <div class="appbar-lead">
+            <h1 class="appbar-title">Diagnostics</h1>
+            <p class="appbar-sub">12 checks &middot; 10 passed</p>
+          </div>
+          <button class="iconbtn" aria-label="Re-run"><svg class="icon"><use href="#i-refresh"/></svg></button>
+        </header>
+
+        <div class="body">
+          <div class="ringcard">
+            <div class="ring" style="--pct:83">
+              <svg viewBox="0 0 100 100" aria-hidden="true">
+                <circle class="ring-track" cx="50" cy="50" r="42"/>
+                <circle class="ring-fill" cx="50" cy="50" r="42"/>
+              </svg>
+              <span class="ring-num">10<em>/12</em></span>
+            </div>
+            <div class="ring-side">
+              <span class="ring-title">System healthy</span>
+              <span class="ring-sub">2 checks need attention</span>
+              <span class="ring-meta mono">last run 9:38</span>
+            </div>
+          </div>
+
+          <div class="section-head"><h2 class="section-title">Checks</h2></div>
+
+          <ul class="rows rows-flush">
+            <li class="checkrow">
+              <span class="checkrow-ico ok"><svg class="icon"><use href="#i-check"/></svg></span>
+              <span class="checkrow-main"><span class="checkrow-title">Engine</span><span class="checkrow-sub">BlackBox initialised in 233 ms</span></span>
+              <span class="checkrow-state ok">Pass</span>
+            </li>
+            <li class="checkrow">
+              <span class="checkrow-ico ok"><svg class="icon"><use href="#i-check"/></svg></span>
+              <span class="checkrow-main"><span class="checkrow-title">Storage</span><span class="checkrow-sub">4.8 GB free</span></span>
+              <span class="checkrow-state ok">Pass</span>
+            </li>
+            <li class="checkrow">
+              <span class="checkrow-ico ok"><svg class="icon"><use href="#i-check"/></svg></span>
+              <span class="checkrow-main"><span class="checkrow-title">Keep-alive</span><span class="checkrow-sub">Strength 4 of 5</span></span>
+              <span class="checkrow-state ok">Pass</span>
+            </li>
+            <li class="checkrow">
+              <span class="checkrow-ico ok"><svg class="icon"><use href="#i-check"/></svg></span>
+              <span class="checkrow-main"><span class="checkrow-title">Proxy</span><span class="checkrow-sub">socks5 reachable, 184 ms</span></span>
+              <span class="checkrow-state ok">Pass</span>
+            </li>
+            <li class="checkrow">
+              <span class="checkrow-ico warn"><svg class="icon"><use href="#i-alert"/></svg></span>
+              <span class="checkrow-main"><span class="checkrow-title">GMS</span><span class="checkrow-sub">Not installed in user 0</span></span>
+              <span class="checkrow-state warn">Warn</span>
+            </li>
+            <li class="checkrow">
+              <span class="checkrow-ico fail"><svg class="icon"><use href="#i-x"/></svg></span>
+              <span class="checkrow-main"><span class="checkrow-title">Hooks</span><span class="checkrow-sub">Epic needs SDK 29 or 30, device is 31</span></span>
+              <span class="checkrow-state fail">Fail</span>
+            </li>
+          </ul>
+
+          <button class="btn btn-ghost btn-block"><svg class="icon"><use href="#i-refresh"/></svg>Run all checks</button>
+        </div>
+      </section>
+
+      <!-- ============ 06 SETTINGS ============ -->
+      <section class="screen" id="s-settings" aria-label="Settings">
+        <header class="appbar">
+          <div class="appbar-lead">
+            <h1 class="appbar-title">Settings</h1>
+            <p class="appbar-sub">NexusClone 3.0.7</p>
+          </div>
+        </header>
+
+        <div class="body">
+          <div class="section-head"><h2 class="section-title">System</h2></div>
+          <div class="card">
+            <button class="listrow" data-go="diag">
+              <span class="listrow-ico"><svg class="icon"><use href="#i-cpu"/></svg></span>
+              <span class="listrow-main">
+                <span class="listrow-title">Diagnostics</span>
+                <span class="listrow-sub">10 of 12 checks passing</span>
+              </span>
+              <span class="badge badge-warn">2</span>
+              <svg class="icon chev"><use href="#i-chev"/></svg>
+            </button>
+            <button class="listrow">
+              <span class="listrow-ico"><svg class="icon"><use href="#i-globe"/></svg></span>
+              <span class="listrow-main">
+                <span class="listrow-title">Default proxy</span>
+                <span class="listrow-sub mono">socks5://10.0.0.4:1080</span>
+              </span>
+              <svg class="icon chev"><use href="#i-chev"/></svg>
+            </button>
+            <button class="listrow">
+              <span class="listrow-ico"><svg class="icon"><use href="#i-shield"/></svg></span>
+              <span class="listrow-main">
+                <span class="listrow-title">Google Play services</span>
+                <span class="listrow-sub">Install GMS into a clone</span>
+              </span>
+              <svg class="icon chev"><use href="#i-chev"/></svg>
+            </button>
+          </div>
+
+          <div class="section-head"><h2 class="section-title">Behaviour</h2></div>
+          <div class="card">
+            <div class="switchrow">
+              <span class="switchrow-main">
+                <span class="switchrow-title">Keep clones alive</span>
+                <span class="switchrow-sub">Foreground service, restart on kill</span>
+              </span>
+              <button class="switch switch-on" role="switch" aria-checked="true" aria-label="Keep clones alive"><i></i></button>
+            </div>
+            <div class="switchrow">
+              <span class="switchrow-main">
+                <span class="switchrow-title">Auto-start on boot</span>
+                <span class="switchrow-sub">Relaunch last running clones</span>
+              </span>
+              <button class="switch" role="switch" aria-checked="false" aria-label="Auto-start on boot"><i></i></button>
+            </div>
+            <div class="switchrow">
+              <span class="switchrow-main">
+                <span class="switchrow-title">Capture previews</span>
+                <span class="switchrow-sub">Screenshot each clone on pause</span>
+              </span>
+              <button class="switch switch-on" role="switch" aria-checked="true" aria-label="Capture previews"><i></i></button>
+            </div>
+          </div>
+
+          <div class="section-head"><h2 class="section-title">Appearance</h2></div>
+          <div class="card">
+            <div class="switchrow">
+              <span class="switchrow-main">
+                <span class="switchrow-title">Theme</span>
+                <span class="switchrow-sub">Follows the system by default</span>
+              </span>
+              <div class="segmented segmented-sm">
+                <button class="seg seg-on">Auto</button>
+                <button class="seg">Dark</button>
+                <button class="seg">Light</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-head"><h2 class="section-title">About</h2></div>
+          <div class="card spec">
+            <div class="spec-row"><span class="spec-k">Version</span><span class="spec-v mono">3.0.7 (build 53)</span></div>
+            <div class="spec-row"><span class="spec-k">Engine</span><span class="spec-v mono">BlackBox 4.0.0</span></div>
+            <div class="spec-row"><span class="spec-k">Device</span><span class="spec-v mono">vivo V2032 &middot; SDK 31</span></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <nav class="tabbar" aria-label="Primary">
+      <button class="tab tab-on" data-go="clones">
+        <svg class="icon"><use href="#i-layers"/></svg>
+        <span>Clones</span>
+      </button>
+      <button class="tab" data-go="apps">
+        <svg class="icon"><use href="#i-grid"/></svg>
+        <span>Apps</span>
+      </button>
+      <button class="tab" data-go="settings">
+        <svg class="icon"><use href="#i-sliders"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <div class="navbar"><span class="navbar-pill"></span></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

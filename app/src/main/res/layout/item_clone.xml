@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Clone card: preview, name, package.
+
+  The preview frame is a fixed 200dp rather than a weighted 0dp. A weight of 1
+  inside a wrap_content parent resolves against zero remaining space, which is
+  exactly how the old instance cell collapsed its preview to nothing. A fixed
+  height cannot collapse.
+
+  The card carries no elevation: the surface is defined by the hairline border
+  in bg_clone_preview and the ripple in bg_ripple_card, not by a shadow.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_ripple_card"
+    android:clickable="true"
+    android:focusable="true"
+    android:paddingBottom="@dimen/space_2">
+
+    <FrameLayout
+        android:id="@+id/previewFrame"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:background="@drawable/bg_clone_preview"
+        android:clipToPadding="false">
+
+        <ImageView
+            android:id="@+id/preview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/cd_instance_preview"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/glyph"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:textSize="@dimen/clone_glyph"
+            android:textStyle="bold"
+            android:textColor="#D1FFFFFF"
+            android:includeFontPadding="false"
+            tools:text="N" />
+
+        <LinearLayout
+            android:id="@+id/liveBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_margin="@dimen/space_2"
+            android:background="@drawable/bg_live_badge"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
+            android:visibility="gone">
+
+            <View
+                android:id="@+id/liveDot"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:background="@drawable/bg_dot"
+                android:backgroundTint="@color/success" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:text="Live"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:textColor="#D8FFE4"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/stateBadge"
+            style="@style/Nc.Badge"
+            android:layout_gravity="top|end"
+            android:layout_margin="@dimen/space_2"
+            android:textColor="@color/text_secondary"
+            tools:text="Running" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_2"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_primary"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:includeFontPadding="false"
+        tools:text="Clone 1" />
+
+    <TextView
+        android:id="@+id/pkg"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp"
+        android:textSize="10sp"
+        android:fontFamily="monospace"
+        android:textColor="@color/text_tertiary"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:includeFontPadding="false"
+        tools:text="com.example.app" />
+
+</LinearLayout>

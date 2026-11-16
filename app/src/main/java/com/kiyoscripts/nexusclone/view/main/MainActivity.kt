@@ -2,461 +2,618 @@ package com.kiyoscripts.nexusclone.view.main
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.Log
-import android.view.Menu
-import android.view.MenuItem
+import android.util.LruCache
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.edit
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.viewpager2.widget.ViewPager2
-import com.afollestad.materialdialogs.MaterialDialog
-import com.afollestad.materialdialogs.input.input
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.kiyoscripts.nexusclone.R
+import com.kiyoscripts.nexusclone.app.AppManager
+import com.kiyoscripts.nexusclone.bean.InstalledAppBean
+import com.kiyoscripts.nexusclone.core.diag.Check
+import com.kiyoscripts.nexusclone.core.diag.Diagnostics
+import com.kiyoscripts.nexusclone.core.instance.CloneInstance
+import com.kiyoscripts.nexusclone.core.instance.InstanceState
+import com.kiyoscripts.nexusclone.core.instance.InstanceManager
+import com.kiyoscripts.nexusclone.core.keepalive.KeepAliveController
+import com.kiyoscripts.nexusclone.core.preview.PreviewCache
+import com.kiyoscripts.nexusclone.data.AppsRepository
+import com.kiyoscripts.nexusclone.databinding.ActivityMainBinding
+import com.kiyoscripts.nexusclone.databinding.ItemCloneBinding
+import com.kiyoscripts.nexusclone.databinding.ItemPackageBinding
+import com.kiyoscripts.nexusclone.ui.diag.DiagnosticsActivity
+import com.kiyoscripts.nexusclone.ui.instance.InstanceDetailActivity
+import com.kiyoscripts.nexusclone.ui.proxy.ProxyActivity
+import com.kiyoscripts.nexusclone.util.toast
+import com.kiyoscripts.nexusclone.view.fake.FakeManagerActivity
+import com.kiyoscripts.nexusclone.view.gms.GmsManagerActivity
+import com.kiyoscripts.nexusclone.view.setting.SettingActivity
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.niunaijun.blackbox.BlackBoxCore
-import com.kiyoscripts.nexusclone.R
-import com.kiyoscripts.nexusclone.app.App
-import com.kiyoscripts.nexusclone.app.AppManager
-import com.kiyoscripts.nexusclone.databinding.ActivityMainBinding
-import com.kiyoscripts.nexusclone.util.Resolution
-import com.kiyoscripts.nexusclone.util.inflate
-import com.kiyoscripts.nexusclone.core.keepalive.KeepAliveController
-import com.kiyoscripts.nexusclone.view.apps.AppsFragment
-import com.kiyoscripts.nexusclone.view.base.LoadingActivity
-import com.kiyoscripts.nexusclone.view.fake.FakeManagerActivity
-import com.kiyoscripts.nexusclone.view.list.ListActivity
-import com.kiyoscripts.nexusclone.view.setting.SettingActivity
+import java.io.File
 
-
-class MainActivity : LoadingActivity() {
-
-    private val viewBinding: ActivityMainBinding by inflate()
-
-    private val mViewPagerAdapter by lazy { ViewPagerAdapter(this) }
-
-    private var currentUser = 0
+/**
+ * The app shell: three tabs over one page host.
+ *
+ * Clones is the primary surface. It is a grid of clones, not a pager of virtual users:
+ * the clone is the object the user thinks in, and the virtual user is an implementation
+ * detail of the container. Apps is a picker that creates a clone from an installed
+ * package. Settings holds the system rows, the behaviour switches and the about block.
+ *
+ * Diagnostics is deliberately not a tab. It is reached from the Settings row (which
+ * carries a live failing-check count) and from a clone's detail screen, and its summary
+ * state is surfaced as the status strip at the top of Clones. A fourth tab for a screen
+ * that is opened rarely and read once would cost a permanent slot in the primary
+ * navigation for no gain.
+ *
+ * The engine is brought up on its own thread from App.onCreate(). Nothing here blocks on
+ * it: the clone list renders from the local store immediately, and the engine-dependent
+ * parts (the status strip, the app picker) fill in when AppManager reports ready.
+ */
+class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        
-        /**
-         * How long the first user-list load waits for the container engine. The engine is
-         * brought up on its own thread from App.onCreate(); if it has not finished by then
-         * the UI keeps its default page instead of blocking.
-         */
+
+        /** How long the app picker waits for the engine before giving up. */
         private const val ENGINE_READY_TIMEOUT_MS = 10_000L
 
-        /** Request code for the API 33+ POST_NOTIFICATIONS prompt. */
-        private const val REQUEST_NOTIFICATIONS = 0x4E44
-
         fun start(context: Context) {
-            val intent = Intent(context, MainActivity::class.java)
-            context.startActivity(intent)
+            context.startActivity(Intent(context, MainActivity::class.java))
         }
     }
+
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var manager: InstanceManager
+    private lateinit var previews: PreviewCache
+    private lateinit var diag: Diagnostics
+    private lateinit var repo: AppsRepository
+
+    private val cloneAdapter = CloneAdapter()
+    private val appAdapter = AppPickerAdapter()
+
+    /**
+     * Scope for preview decoding and icon resolution.
+     *
+     * Separate from lifecycleScope so an in-flight decode is not cancelled by a
+     * configuration change, and cancelled explicitly in onDestroy.
+     */
+    private val workScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    /** Package icons, keyed by package name. getApplicationIcon is a binder round-trip. */
+    private val iconCache = LruCache<String, Drawable>(96)
+
+    /** The full installed-app list, before the search box and the chips narrow it. */
+    private var allApps: List<InstalledAppBean> = emptyList()
+
+    private var currentTab = Tab.CLONES
+
+    /** Last diagnostics sweep, used for the status strip and the Settings badge. */
+    private var lastChecks: List<Check> = emptyList()
+
+    private enum class Tab { CLONES, APPS, SETTINGS }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        try {
-            super.onCreate(savedInstanceState)
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-            try {
-                BlackBoxCore.get().onBeforeMainActivityOnCreate(this)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in onBeforeMainActivityOnCreate: ${e.message}")
+        manager = InstanceManager.get(this)
+        previews = PreviewCache(this)
+        diag = Diagnostics(this)
+        repo = AppsRepository()
+
+        // Starts the preview refresh timer and eviction on ON_START, stops on ON_STOP.
+        previews.attach(this)
+
+        initTabs()
+        initCloneGrid()
+        initAppPicker()
+        initSettings()
+        initFab()
+        initOverflow()
+
+        observeInstances()
+        refreshDiagnostics()
+    }
+
+    // ---------------------------------------------------------------- tabs
+
+    private fun initTabs() {
+        binding.tabClones.setOnClickListener { selectTab(Tab.CLONES) }
+        binding.tabApps.setOnClickListener { selectTab(Tab.APPS) }
+        binding.tabSettings.setOnClickListener { selectTab(Tab.SETTINGS) }
+        selectTab(Tab.CLONES)
+    }
+
+    private fun selectTab(tab: Tab) {
+        currentTab = tab
+
+        binding.pageClones.visibility = if (tab == Tab.CLONES) View.VISIBLE else View.GONE
+        binding.pageApps.visibility = if (tab == Tab.APPS) View.VISIBLE else View.GONE
+        binding.pageSettings.visibility = if (tab == Tab.SETTINGS) View.VISIBLE else View.GONE
+
+        // The FAB creates a clone, so it only means something on Clones and Apps.
+        binding.fab.visibility = if (tab == Tab.SETTINGS) View.GONE else View.VISIBLE
+
+        binding.title.setText(
+            when (tab) {
+                Tab.CLONES -> R.string.nav_instances
+                Tab.APPS -> R.string.nav_apps
+                Tab.SETTINGS -> R.string.nav_settings
             }
+        )
 
-            setContentView(viewBinding.root)
-            initToolbar(viewBinding.toolbarLayout.toolbar, R.string.app_name)
-            initViewPager()
-            initFab()
-            initToolbarSubTitle()
+        tintTab(binding.tabClonesIcon, binding.tabClonesLabel, tab == Tab.CLONES)
+        tintTab(binding.tabAppsIcon, binding.tabAppsLabel, tab == Tab.APPS)
+        tintTab(binding.tabSettingsIcon, binding.tabSettingsLabel, tab == Tab.SETTINGS)
 
-            try {
-                BlackBoxCore.get().onAfterMainActivityOnCreate(this)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in onAfterMainActivityOnCreate: ${e.message}")
+        when (tab) {
+            Tab.CLONES -> updateClonesSubtitle()
+            Tab.APPS -> {
+                binding.subtitle.text = getString(R.string.choose_app)
+                if (allApps.isEmpty()) loadApps()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Critical error in onCreate: ${e.message}")
-            // Show error dialog to user
-            showErrorDialog("Failed to initialize app: ${e.message}")
+            Tab.SETTINGS -> binding.subtitle.text = getString(R.string.app_name)
         }
     }
 
-    private fun showErrorDialog(message: String) {
-        try {
-            MaterialDialog(this).show {
-                title(text = "Error")
-                message(text = message)
-                positiveButton(text = "OK") {
-                    finish()
+    private fun tintTab(icon: ImageView, label: TextView, on: Boolean) {
+        val color = ContextCompat.getColor(this, if (on) R.color.accent else R.color.text_tertiary)
+        icon.setColorFilter(color)
+        label.setTextColor(color)
+    }
+
+    // ---------------------------------------------------------------- clones
+
+    private fun initCloneGrid() {
+        binding.cloneGrid.layoutManager = GridLayoutManager(this, 2)
+        binding.cloneGrid.adapter = cloneAdapter
+        binding.cloneGrid.setHasFixedSize(true)
+    }
+
+    private fun observeInstances() {
+        lifecycleScope.launch {
+            try {
+                manager.refresh()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "initial instance refresh failed: ${e.message}")
+            }
+
+            manager.instances.collectLatest { list ->
+                cloneAdapter.submit(list)
+                binding.clonesEmpty.visibility =
+                    if (list.isEmpty()) View.VISIBLE else View.GONE
+                if (currentTab == Tab.CLONES) updateClonesSubtitle()
+            }
+        }
+    }
+
+    private fun updateClonesSubtitle() {
+        val list = manager.snapshot()
+        val running = list.count { it.state.isResident }
+        binding.subtitle.text = when {
+            list.isEmpty() -> getString(R.string.instances_empty)
+            else -> {
+                val count = if (list.size == 1) {
+                    getString(R.string.nc_clone_count_one, list.size)
+                } else {
+                    getString(R.string.nc_clone_count, list.size)
+                }
+                if (running > 0) {
+                    count + " · " + getString(R.string.nc_running_count, running)
+                } else {
+                    count
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error showing error dialog: ${e.message}")
-            finish()
         }
     }
 
-    private fun initToolbarSubTitle() {
-        try {
-            updateUserRemark(0)
-            //hack code
-            viewBinding.toolbarLayout.toolbar.getChildAt(1)?.setOnClickListener {
-                try {
-                    MaterialDialog(this).show {
-                        title(res = R.string.userRemark)
-                        input(
-                            hintRes = R.string.userRemark,
-                            prefill = viewBinding.toolbarLayout.toolbar.subtitle
-                        ) { _, input ->
-                            try {
-                                AppManager.mRemarkSharedPreferences.edit {
-                                    putString("Remark$currentUser", input.toString())
-                                    viewBinding.toolbarLayout.toolbar.subtitle = input
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error saving user remark: ${e.message}")
-                            }
-                        }
-                        positiveButton(res = R.string.done)
-                        negativeButton(res = R.string.cancel)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error showing remark dialog: ${e.message}")
-                }
+    // ---------------------------------------------------------------- apps
+
+    private fun initAppPicker() {
+        binding.appList.layoutManager =
+            androidx.recyclerview.widget.LinearLayoutManager(this)
+        binding.appList.adapter = appAdapter
+
+        binding.appSearch.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun afterTextChanged(s: android.text.Editable?) {
+                binding.appSearchClear.visibility =
+                    if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
+                applyAppFilter()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in initToolbarSubTitle: ${e.message}")
+        })
+
+        binding.appSearchClear.setOnClickListener {
+            binding.appSearch.setText("")
+        }
+
+        binding.chipAll.setOnClickListener { setAppChip(Chip.ALL) }
+        binding.chipUser.setOnClickListener { setAppChip(Chip.USER) }
+        binding.chipSystem.setOnClickListener { setAppChip(Chip.SYSTEM) }
+    }
+
+    private enum class Chip { ALL, USER, SYSTEM }
+
+    private var currentChip = Chip.ALL
+
+    private fun setAppChip(chip: Chip) {
+        currentChip = chip
+        val on = ContextCompat.getColor(this, R.color.text_on_accent)
+        val off = ContextCompat.getColor(this, R.color.text_secondary)
+
+        listOf(
+            binding.chipAll to (chip == Chip.ALL),
+            binding.chipUser to (chip == Chip.USER),
+            binding.chipSystem to (chip == Chip.SYSTEM)
+        ).forEach { (view, selected) ->
+            view.setBackgroundResource(
+                if (selected) R.drawable.bg_chip_on else R.drawable.bg_chip
+            )
+            view.setTextColor(if (selected) on else off)
+        }
+        applyAppFilter()
+    }
+
+    private fun applyAppFilter() {
+        val query = binding.appSearch.text?.toString()?.trim().orEmpty()
+        val filtered = allApps.filter { app ->
+            val matchesQuery = query.isEmpty() ||
+                app.name.contains(query, ignoreCase = true) ||
+                app.packageName.contains(query, ignoreCase = true)
+            val matchesChip = when (currentChip) {
+                Chip.ALL -> true
+                // The repository already drops FLAG_SYSTEM packages, so everything it
+                // returns is a user app. "System" therefore means "already cloned", which
+                // is the only other distinction the picker can honestly make.
+                Chip.USER -> !app.isInstall
+                Chip.SYSTEM -> app.isInstall
+            }
+            matchesQuery && matchesChip
+        }
+        appAdapter.submit(filtered)
+        binding.appsEmpty.visibility =
+            if (filtered.isEmpty() && allApps.isNotEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private fun loadApps() {
+        binding.appsProgress.visibility = View.VISIBLE
+        lifecycleScope.launch {
+            try {
+                if (!AppManager.awaitEngineReady(ENGINE_READY_TIMEOUT_MS)) {
+                    Log.w(TAG, "engine not ready, app picker stays empty")
+                    return@launch
+                }
+                val list = withContext(Dispatchers.IO) {
+                    repo.previewInstallList()
+                    repo.installedAppsSnapshot()
+                }
+                allApps = list
+                applyAppFilter()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "app picker load failed: ${e.message}")
+            } finally {
+                binding.appsProgress.visibility = View.GONE
+            }
         }
     }
+
+    // ---------------------------------------------------------------- settings
+
+    private fun initSettings() {
+        binding.rowDiagnostics.setOnClickListener { DiagnosticsActivity.start(this) }
+        binding.rowProxy.setOnClickListener {
+            // The default proxy is edited through a clone's proxy screen; there is no
+            // global proxy editor, so this row explains that rather than opening nothing.
+            toast(getString(R.string.proxy_none))
+        }
+        binding.rowGms.setOnClickListener { GmsManagerActivity.start(this) }
+
+        val keepAlive = KeepAliveController.get(this)
+        binding.switchKeepAlive.isChecked = keepAlive.isEnabled()
+        binding.switchKeepAlive.setOnCheckedChangeListener { _, checked ->
+            keepAlive.setEnabled(checked)
+        }
+
+        binding.specVersion.text = runCatching {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            "${info.versionName} (${info.longVersionCode})"
+        }.getOrDefault("-")
+
+        binding.specDevice.text =
+            "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · SDK ${android.os.Build.VERSION.SDK_INT}"
+    }
+
+    private fun refreshDiagnostics() {
+        lifecycleScope.launch {
+            try {
+                val checks = withContext(Dispatchers.IO) { diag.runAll() }
+                lastChecks = checks
+                val passed = checks.count { it.ok }
+                val failed = checks.size - passed
+
+                binding.statusStrip.text.text =
+                    if (failed == 0) getString(R.string.nc_checks_passing)
+                    else getString(R.string.nc_checks_attention, failed)
+                binding.statusStrip.meta.text = "$passed/${checks.size}"
+                binding.statusStrip.dot.backgroundTintList = ContextCompat.getColorStateList(
+                    this@MainActivity,
+                    if (failed == 0) R.color.success else R.color.warn
+                )
+
+                binding.subDiagnostics.text =
+                    getString(R.string.nc_checks_summary, passed, checks.size)
+                binding.badgeDiagnostics.visibility =
+                    if (failed == 0) View.GONE else View.VISIBLE
+                binding.badgeDiagnostics.text = failed.toString()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "diagnostics sweep failed: ${e.message}")
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- fab + overflow
+
+    private fun initFab() {
+        binding.fab.setOnClickListener {
+            // Creating a clone starts from the app picker, which is the Apps tab.
+            selectTab(Tab.APPS)
+        }
+    }
+
+    private fun initOverflow() {
+        binding.btnMore.setOnClickListener { showOverflow() }
+    }
+
+    private fun showOverflow() {
+        val items = arrayOf(
+            getString(R.string.diag_title),
+            getString(R.string.gms_manager),
+            getString(R.string.setting),
+            getString(R.string.fake_location)
+        )
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> DiagnosticsActivity.start(this)
+                    1 -> GmsManagerActivity.start(this)
+                    2 -> SettingActivity.start(this)
+                    3 -> FakeManagerActivity.start(this)
+                }
+            }
+            .show()
+    }
+
+    // ---------------------------------------------------------------- lifecycle
 
     override fun onResume() {
         super.onResume()
-        // Start the keep-alive service here, not in Application.onCreate(). By the time
-        // an Activity is resumed the app is foreground, so startForegroundService() is
-        // permitted on Android 12+ and the service can reach startForeground() in time.
-        try {
-            val keepAlive = KeepAliveController.get(this)
-            // On API 33+ the foreground-service notification is suppressed until
-            // POST_NOTIFICATIONS is granted, which leaves the user with no visible way to
-            // stop the service. Only ask when the user has actually opted in.
-            if (keepAlive.isEnabled()) {
-                keepAlive.ensureNotificationPermission(this, REQUEST_NOTIFICATIONS)
-            }
-            keepAlive.start()
-        } catch (e: Exception) {
-            Log.w(TAG, "keep-alive start failed: ${e.message}")
+        // A clone may have been created, launched or deleted while this screen was away.
+        lifecycleScope.launch {
+            runCatching { manager.refresh() }
+            if (currentTab == Tab.CLONES) updateClonesSubtitle()
         }
     }
 
-    private fun initViewPager() {
-        try {
-            // BlackBoxCore.get().users is a synchronous binder round-trip into the :black
-            // engine process. Calling it here, on the main thread inside onCreate, is what
-            // kept the window at isReadyForDisplay()=false: while the engine was still
-            // publishing its provider the call blocked, onCreate never returned, and the
-            // framework eventually ANR'd the process.
-            //
-            // So the pager starts empty and the window draws immediately. loadUsersAsync()
-            // fills it in once the engine answers. An empty adapter is a valid state for
-            // ViewPager2; the empty-state view below covers the gap.
-            currentUser = 0
-
-            viewBinding.viewPager.adapter = mViewPagerAdapter
-            viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
-            viewBinding.viewPager.registerOnPageChangeCallback(object :
-                ViewPager2.OnPageChangeCallback() {
-                override fun onPageSelected(position: Int) {
-                    try {
-                        super.onPageSelected(position)
-                        // Read the id from the adapter, not from a parallel fragment list:
-                        // the adapter is the single source of truth for what is on screen,
-                        // and a stale list is exactly how the old code ended up pointing at
-                        // a virtual user that did not exist.
-                        val userId = mViewPagerAdapter.userIdAt(position) ?: return
-                        currentUser = userId
-                        updateUserRemark(currentUser)
-                        showFloatButton(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in onPageSelected: ${e.message}")
-                    }
-                }
-            })
-
-            loadUsersAsync()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in initViewPager: ${e.message}")
-        }
+    override fun onDestroy() {
+        workScope.cancel()
+        super.onDestroy()
     }
+
+    // ---------------------------------------------------------------- adapters
 
     /**
-     * Resolve the virtual user list off the main thread and rebuild the pager if it
-     * differs from the single default page created in initViewPager().
+     * Clone grid.
      *
-     * The engine is initialised on a background thread from App.onCreate(), so it is not
-     * necessarily up when this Activity starts. Wait for AppManager's readiness signal
-     * (bounded by [ENGINE_READY_TIMEOUT_MS]) before asking the engine anything, and keep the
-     * default page plus the loading indicator visible while waiting. If the engine never
-     * becomes ready we log and leave the empty state in place rather than blocking or
-     * crashing.
+     * Diffs on the fields the cell actually renders so a state change repaints one cell
+     * instead of the whole grid.
      */
-    private fun loadUsersAsync() {
-        // Dispatchers.Main (not Main.immediate) so the loading dialog is shown after
-        // onCreate() has returned, never in the middle of it.
-        lifecycleScope.launch(Dispatchers.Main) {
-            // Only put the loading dialog up when there is actually something to wait for;
-            // on a warm start the engine is usually already up and a dialog would just flash.
-            var loadingShown = false
-            try {
-                if (!AppManager.engineReady.value && !isFinishing && !isDestroyed) {
-                    try {
-                        showLoading()
-                        loadingShown = true
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error showing loading: ${e.message}")
-                    }
-                }
+    private inner class CloneAdapter : RecyclerView.Adapter<CloneAdapter.VH>() {
 
-                if (!AppManager.awaitEngineReady(ENGINE_READY_TIMEOUT_MS)) {
-                    Log.w(
-                        TAG,
-                        "engine not ready after ${ENGINE_READY_TIMEOUT_MS}ms, keeping default page"
-                    )
-                    return@launch
-                }
+        private val items = ArrayList<CloneInstance>()
 
-                val userList = withContext(Dispatchers.IO) { BlackBoxCore.get().users }
-                if (userList.isEmpty()) {
-                    return@launch
-                }
+        fun submit(list: List<CloneInstance>) {
+            val old = ArrayList(items)
+            items.clear()
+            items.addAll(list)
 
-                // Hand the adapter the real user ids in order. It owns the page set now;
-                // there is no parallel fragment list to keep in sync, and no trailing
-                // "add user" page (see ViewPagerAdapter for why that page was removed).
-                val ids = userList.map { it.id }
-                currentUser = ids.firstOrNull() ?: 0
-                mViewPagerAdapter.submit(ids)
-                viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
-                updateDotsVisibility()
-                updateUserRemark(currentUser)
-            } catch (e: CancellationException) {
-                // The Activity went away while we were waiting; let the scope unwind.
-                throw e
-            } catch (e: Throwable) {
-                Log.w(TAG, "failed to load virtual users: ${e.message}")
-            } finally {
-                if (loadingShown) {
-                    try {
-                        hideLoading()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error hiding loading: ${e.message}")
-                    }
-                }
-            }
-        }
-    }
-
-    private fun initFab() {
-        try {
-            viewBinding.fab.setOnClickListener {
-                try {
-                    // Read the user id from the adapter rather than from
-                    // viewPager.currentItem. currentItem is a page index; the install
-                    // target is a virtual user id, and the two only coincide when the
-                    // users happen to be numbered 0..n in page order. Passing the index
-                    // installed the apk into the wrong user as soon as any user had been
-                    // deleted and the ids had gaps.
-                    val userId = mViewPagerAdapter.userIdAt(viewBinding.viewPager.currentItem)
-                    if (userId == null) {
-                        Log.w(TAG, "clone tapped with no page selected")
-                        return@setOnClickListener
-                    }
-                    val intent = Intent(this, ListActivity::class.java)
-                    intent.putExtra("userID", userId)
-                    apkPathResult.launch(intent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error launching ListActivity: ${e.message}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in initFab: ${e.message}")
-        }
-    }
-
-    /**
-     * A single dot under a single page is noise. Hide the indicator until there is
-     * something to indicate.
-     */
-    private fun updateDotsVisibility() {
-        try {
-            viewBinding.dotsIndicator.visibility =
-                if (mViewPagerAdapter.itemCount > 1) View.VISIBLE else View.GONE
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in updateDotsVisibility: ${e.message}")
-        }
-    }
-
-    fun showFloatButton(show: Boolean) {
-        try {
-            val tranY: Float = Resolution.convertDpToPixel(120F, App.getContext())
-            val time = 200L
-            if (show) {
-                viewBinding.fab.animate().translationY(0f).alpha(1f).setDuration(time)
-                    .start()
-            } else {
-                viewBinding.fab.animate().translationY(tranY).alpha(0f).setDuration(time)
-                    .start()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in showFloatButton: ${e.message}")
-        }
-    }
-
-    fun scanUser() {
-        try {
-            // Same trap as the initial load: BlackBoxCore.get().users is a binder round-trip
-            // into the :black process. This is called from AppsFragment after an install or
-            // uninstall, which can happen while the engine is still coming up on its own
-            // thread. Skip the refresh in that case instead of blocking the main thread; the
-            // initial load in loadUsersAsync() will populate the pager once the engine is up.
-            if (!AppManager.engineReady.value) {
-                Log.d(TAG, "scanUser skipped, engine not ready yet")
+            if (old.size != items.size) {
+                notifyDataSetChanged()
                 return
             }
-            val userList = BlackBoxCore.get().users
-
-            // Preserve the page the user is actually looking at. Rebuilding the adapter
-            // resets ViewPager2 to position 0, which yanks the user back to the first user
-            // every time they install or uninstall something on a later page.
-            val previousUser = currentUser
-            val ids = userList.map { it.id }
-            mViewPagerAdapter.submit(ids)
-            viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
-            updateDotsVisibility()
-
-            val restored = mViewPagerAdapter.indexOfUser(previousUser)
-            if (restored >= 0 && restored != viewBinding.viewPager.currentItem) {
-                viewBinding.viewPager.setCurrentItem(restored, false)
+            for (i in items.indices) {
+                val a = old[i]
+                val b = items[i]
+                if (a.id != b.id) {
+                    notifyDataSetChanged()
+                    return
+                }
+                if (a.state != b.state ||
+                    a.label != b.label ||
+                    a.previewUpdatedAt != b.previewUpdatedAt
+                ) {
+                    notifyItemChanged(i)
+                }
             }
-            currentUser = mViewPagerAdapter.userIdAt(viewBinding.viewPager.currentItem) ?: 0
-            updateUserRemark(currentUser)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in scanUser: ${e.message}")
         }
-    }
 
-    private fun updateUserRemark(userId: Int) {
-        try {
-            var remark = AppManager.mRemarkSharedPreferences.getString("Remark$userId", "User $userId")
-            if (remark.isNullOrEmpty()) {
-                remark = "User $userId"
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
+            VH(ItemCloneBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+
+        override fun getItemCount(): Int = items.size
+
+        override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
+
+        inner class VH(private val b: ItemCloneBinding) : RecyclerView.ViewHolder(b.root) {
+
+            fun bind(inst: CloneInstance) {
+                b.label.text = inst.label
+                b.pkg.text = inst.packageName
+                b.glyph.text = inst.label.take(1).uppercase()
+
+                // Deterministic tint per clone so a clone keeps its colour across restarts.
+                b.previewFrame.setBackgroundResource(tintFor(inst))
+
+                val resident = inst.state.isResident
+                b.liveBadge.visibility = if (resident) View.VISIBLE else View.GONE
+                b.stateBadge.visibility = if (resident) View.GONE else View.VISIBLE
+                b.stateBadge.text = stateLabel(inst.state)
+
+                bindPreview(inst)
+
+                b.root.setOnClickListener {
+                    InstanceDetailActivity.start(this@MainActivity, inst.id)
+                }
             }
 
-            viewBinding.toolbarLayout.toolbar.subtitle = remark
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating user remark: ${e.message}")
-            viewBinding.toolbarLayout.toolbar.subtitle = "User $userId"
-        }
-    }
+            private fun bindPreview(inst: CloneInstance) {
+                val file: File? = previews.existingFile(inst)
+                val stamp = inst.previewUpdatedAt
 
-    private val apkPathResult =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            try {
-                if (it.resultCode == RESULT_OK) {
-                    it.data?.let { data ->
-                        val userId = data.getIntExtra("userID", 0)
-                        val source = data.getStringExtra("source")
-                        if (source != null) {
-                            // Resolve the page that owns this virtual user instead of
-                            // indexing a list by user id. The old code did
-                            // `fragmentList[userId]`, which conflated a page index with a
-                            // virtual user id and threw IndexOutOfBoundsException as soon as
-                            // the two diverged (any deleted user leaves a gap in the ids).
-                            val page = mViewPagerAdapter.indexOfUser(userId)
-                            if (page < 0) {
-                                Log.w(TAG, "install result for unknown user $userId")
-                                return@let
-                            }
-                            val fragment = supportFragmentManager.findFragmentByTag(
-                                "f" + mViewPagerAdapter.getItemId(page)
-                            ) as? AppsFragment
-                            if (fragment != null) {
-                                fragment.installApk(source)
-                            } else {
-                                // The page is not instantiated (ViewPager2 only keeps a
-                                // window of pages alive). Move to it first; the install is
-                                // then applied by the fragment once it exists.
-                                viewBinding.viewPager.setCurrentItem(page, false)
-                                pendingInstall = userId to source
-                            }
-                        }
+                if (file == null) {
+                    b.preview.tag = null
+                    b.preview.setImageDrawable(null)
+                    b.preview.visibility = View.GONE
+                    b.glyph.visibility = View.VISIBLE
+                    return
+                }
+
+                val tag = file.absolutePath + "@" + stamp
+                if (b.preview.tag == tag) return
+                b.preview.tag = tag
+
+                workScope.launch {
+                    val bmp = withContext(Dispatchers.IO) {
+                        BitmapFactory.decodeFile(file.absolutePath)
+                    }
+                    // The holder may have been recycled onto another clone while we were
+                    // decoding; only apply if the tag still matches.
+                    if (bmp != null && b.preview.tag == tag) {
+                        b.preview.setImageBitmap(bmp)
+                        b.preview.visibility = View.VISIBLE
+                        b.glyph.visibility = View.GONE
                     }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling APK path result: ${e.message}")
             }
         }
+    }
 
     /**
-     * An install requested for a page that was not alive yet. Applied by
-     * [consumePendingInstall] once that page's fragment exists.
+     * App picker.
+     *
+     * One row per installed package. Tapping the row clones it; the plus button does the
+     * same thing and exists so the affordance is visible rather than implied.
      */
-    private var pendingInstall: Pair<Int, String>? = null
+    private inner class AppPickerAdapter : RecyclerView.Adapter<AppPickerAdapter.VH>() {
 
-    /** Called by AppsFragment once it is attached, to pick up a deferred install. */
-    fun consumePendingInstall(userId: Int): String? {
-        val pending = pendingInstall ?: return null
-        if (pending.first != userId) return null
-        pendingInstall = null
-        return pending.second
-    }
+        private val items = ArrayList<InstalledAppBean>()
 
-    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
-        try {
-            menuInflater.inflate(R.menu.menu_main, menu)
-            return true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating options menu: ${e.message}")
-            return false
+        fun submit(list: List<InstalledAppBean>) {
+            items.clear()
+            items.addAll(list)
+            notifyDataSetChanged()
         }
-    }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        try {
-            when (item.itemId) {
-                R.id.main_instances -> {
-                    com.kiyoscripts.nexusclone.ui.instances.InstancesActivity.start(this)
-                }
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
+            VH(ItemPackageBinding.inflate(LayoutInflater.from(parent.context), parent, false))
 
-                R.id.main_diagnostics -> {
-                    com.kiyoscripts.nexusclone.ui.diag.DiagnosticsActivity.start(this)
-                }
+        override fun getItemCount(): Int = items.size
 
-                R.id.main_gms -> {
-                    com.kiyoscripts.nexusclone.view.gms.GmsManagerActivity.start(this)
-                }
+        override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
 
-                R.id.main_setting -> {
-                    SettingActivity.start(this)
-                }
+        inner class VH(private val b: ItemPackageBinding) : RecyclerView.ViewHolder(b.root) {
 
-                R.id.fake_location -> {
-                    // toast("Still Developing")
-                    val intent = Intent(this, FakeManagerActivity::class.java)
-                    intent.putExtra("userID", 0)
-                    startActivity(intent)
-                }
+            fun bind(app: InstalledAppBean) {
+                b.name.text = app.name
+                b.packageName.text = app.packageName
+                b.icon.setImageDrawable(iconFor(app))
+
+                b.cloneCount.visibility = if (app.isInstall) View.VISIBLE else View.GONE
+                b.cloneCount.text = getString(R.string.nc_cloned)
+
+                val clone = View.OnClickListener { createClone(app.packageName) }
+                b.root.setOnClickListener(clone)
+                b.btnClone.setOnClickListener(clone)
             }
-
-            return true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error handling menu item selection: ${e.message}")
-            return false
         }
+    }
+
+    private fun iconFor(app: InstalledAppBean): Drawable? {
+        iconCache.get(app.packageName)?.let { return it }
+        val icon = app.icon
+        if (icon != null) iconCache.put(app.packageName, icon)
+        return icon
+    }
+
+    private fun createClone(packageName: String) {
+        lifecycleScope.launch {
+            binding.appsProgress.visibility = View.VISIBLE
+            try {
+                val result = manager.create(packageName)
+                result.fold(
+                    onSuccess = { inst ->
+                        toast(getString(R.string.clone_created, inst.label))
+                        selectTab(Tab.CLONES)
+                    },
+                    onFailure = { e ->
+                        toast(getString(R.string.clone_failed, e.message ?: "unknown"))
+                    }
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                toast(getString(R.string.clone_failed, e.message ?: "unknown"))
+            } finally {
+                binding.appsProgress.visibility = View.GONE
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private fun tintFor(inst: CloneInstance): Int {
+        // Stable per clone: the row id never changes, so the colour never changes.
+        return when ((inst.id % 4L).toInt()) {
+            0 -> R.drawable.bg_clone_tint_1
+            1 -> R.drawable.bg_clone_tint_2
+            2 -> R.drawable.bg_clone_tint_3
+            else -> R.drawable.bg_clone_tint_4
+        }
+    }
+
+    private fun stateLabel(s: InstanceState): String = when (s) {
+        InstanceState.CREATED -> getString(R.string.state_created)
+        InstanceState.INSTALLED -> getString(R.string.state_installed)
+        InstanceState.COLD -> getString(R.string.state_cold)
+        InstanceState.WARM -> getString(R.string.state_warm)
+        InstanceState.FOREGROUND -> getString(R.string.state_foreground)
+        InstanceState.BACKGROUND -> getString(R.string.state_background)
+        InstanceState.FROZEN -> getString(R.string.state_frozen)
+        InstanceState.DEAD -> getString(R.string.state_dead)
     }
 }

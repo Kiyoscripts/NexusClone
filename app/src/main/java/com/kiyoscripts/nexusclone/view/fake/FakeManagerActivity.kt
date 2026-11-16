@@ -16,7 +16,7 @@ import top.niunaijun.blackbox.entity.location.BLocation
 import top.niunaijun.blackbox.fake.frameworks.BLocationManager
 import com.kiyoscripts.nexusclone.R
 import com.kiyoscripts.nexusclone.bean.FakeLocationBean
-import com.kiyoscripts.nexusclone.databinding.ActivityListBinding
+import com.kiyoscripts.nexusclone.databinding.ActivityFakeManagerBinding
 import com.kiyoscripts.nexusclone.util.InjectionUtil
 import com.kiyoscripts.nexusclone.util.inflate
 import com.kiyoscripts.nexusclone.util.toast
@@ -30,7 +30,7 @@ import com.kiyoscripts.nexusclone.view.base.BaseActivity
 class FakeManagerActivity : BaseActivity() {
     val TAG: String = "FakeManagerActivity"
 
-    private val viewBinding: ActivityListBinding by inflate()
+    private val viewBinding: ActivityFakeManagerBinding by inflate()
 
     //    private lateinit var mAdapter: ListAdapter
     private lateinit var mAdapter: RVAdapter<FakeLocationBean>
