@@ -108,6 +108,8 @@ for f in glob.glob(os.path.join(RES, "drawable*/*")):
 # ---------------------------------------------------------------- layout inventory
 
 layout_ids = {}
+id_tag = {}       # layout -> {id: widget tag}
+include_map = {}  # layout -> {id: included layout name}
 
 for f in sorted(glob.glob(os.path.join(RES, "layout/*.xml"))):
     base = os.path.basename(f)[:-4]
@@ -118,11 +120,21 @@ for f in sorted(glob.glob(os.path.join(RES, "layout/*.xml"))):
         continue
 
     ids = set()
+    tags = {}
+    incs = {}
     for el in tree.iter():
         raw = el.get("{http://schemas.android.com/apk/res/android}id")
         if raw and raw.startswith("@+id/"):
-            ids.add(raw[len("@+id/"):])
+            name = raw[len("@+id/"):]
+            ids.add(name)
+            tags[name] = el.tag
+            if el.tag == "include":
+                ref = el.get("layout", "")
+                if ref.startswith("@layout/"):
+                    incs[name] = ref[len("@layout/"):]
     layout_ids[base] = ids
+    id_tag[base] = tags
+    include_map[base] = incs
 
     # every reference in the file must resolve
     text = open(f, encoding="utf-8").read()
@@ -216,6 +228,217 @@ for f in glob.glob(os.path.join(JAVA, "**/*.kt"), recursive=True):
                     continue
                 if member not in layout_ids[layout]:
                     failures.append(f"{rel}: {var}.{member} not in {layout}.xml")
+
+# ---------------------------------------------------------------- binding type check
+#
+# The id-existence check above cannot catch a binding TYPE mismatch: `btnFreeze` exists in
+# activity_instance_detail.xml, so `binding.btnFreeze.text` passes it, and then CI fails with
+# "Unresolved reference: text" because btnFreeze is a LinearLayout row, not a TextView.
+#
+# This pass is whitelist-driven on purpose. A member is only judged when it belongs to a
+# known widget-specific API family; anything unrecognised is left alone. That keeps the
+# check at zero false positives while still catching the class that actually broke the build.
+
+TEXT_TAGS = {
+    "TextView", "Button", "EditText", "CheckBox", "Switch", "RadioButton",
+    "CheckedTextView", "AutoCompleteTextView", "ToggleButton", "MultiAutoCompleteTextView",
+    "androidx.appcompat.widget.AppCompatTextView",
+    "androidx.appcompat.widget.AppCompatButton",
+    "androidx.appcompat.widget.AppCompatEditText",
+    "androidx.appcompat.widget.AppCompatCheckBox",
+    "androidx.appcompat.widget.AppCompatRadioButton",
+    "com.google.android.material.textview.MaterialTextView",
+    "com.google.android.material.button.MaterialButton",
+    "com.google.android.material.textfield.TextInputEditText",
+    "com.google.android.material.switchmaterial.SwitchMaterial",
+    "com.google.android.material.checkbox.MaterialCheckBox",
+    "com.google.android.material.radiobutton.MaterialRadioButton",
+    "com.google.android.material.chip.Chip",
+}
+
+TEXT_MEMBERS = {
+    "text", "setText", "hint", "setHint", "append", "setError", "setTextColor",
+    "setTextSize", "setTypeface", "setGravity", "setMaxLines", "setSingleLine",
+    "setEllipsize", "setTextAppearance", "setInputType", "setSelection", "setFilters",
+    "setMovementMethod", "setImeOptions", "setKeyListener", "setCursorVisible",
+    "setHintTextColor", "setLinkTextColor", "setHighlightColor", "setCompoundDrawables",
+    "setCompoundDrawablePadding", "setLetterSpacing", "setLineSpacing", "setAllCaps",
+    "setTextIsSelectable", "setShowSoftInputOnFocus", "setSelectAllOnFocus",
+    "setRawInputType", "setTransformationMethod", "setShadowLayer", "setEms",
+    "setMinEms", "setMaxEms", "setMinLines", "setHorizontallyScrolling",
+    "setFreezesText", "setIncludeFontPadding", "setBreakStrategy",
+    "setHyphenationFrequency", "setJustificationMode", "setFallbackLineSpacing",
+    "setAutoSizeTextTypeUniformWithConfiguration", "setAutoSizeTextTypeWithDefaults",
+    "setTextLocales", "setTextScaleX", "setTextSkewX", "setFontFeatureSettings",
+    "setFontVariationSettings", "setElegantTextHeight", "setTextCursorDrawable",
+    "setLineHeight", "setTextKeepState",
+}
+
+IMAGE_TAGS = {
+    "ImageView", "ImageButton",
+    "androidx.appcompat.widget.AppCompatImageView",
+    "androidx.appcompat.widget.AppCompatImageButton",
+    "com.google.android.material.imageview.ShapeableImageView",
+    "com.google.android.material.floatingactionbutton.FloatingActionButton",
+}
+
+IMAGE_MEMBERS = {
+    "setImageResource", "setImageDrawable", "setImageBitmap", "setImageURI",
+    "setImageIcon", "setScaleType", "setColorFilter", "setAdjustViewBounds",
+}
+
+CHECK_TAGS = {
+    "CheckBox", "Switch", "RadioButton", "ToggleButton",
+    "androidx.appcompat.widget.AppCompatCheckBox",
+    "androidx.appcompat.widget.AppCompatRadioButton",
+    "com.google.android.material.switchmaterial.SwitchMaterial",
+    "com.google.android.material.checkbox.MaterialCheckBox",
+    "com.google.android.material.radiobutton.MaterialRadioButton",
+}
+
+CHECK_MEMBERS = {"isChecked", "setChecked", "toggle", "setOnCheckedChangeListener"}
+
+PROGRESS_TAGS = {
+    "ProgressBar",
+    "com.google.android.material.progressindicator.LinearProgressIndicator",
+    "com.google.android.material.progressindicator.CircularProgressIndicator",
+}
+
+PROGRESS_MEMBERS = {
+    "setProgress", "setMax", "setIndeterminate", "setProgressDrawable",
+    "setSecondaryProgress", "setProgressCompat",
+}
+
+RECYCLER_TAGS = {"androidx.recyclerview.widget.RecyclerView"}
+
+RECYCLER_MEMBERS = {
+    "setLayoutManager", "setAdapter", "setHasFixedSize", "setItemAnimator",
+    "addItemDecoration", "setItemViewCacheSize", "swapAdapter", "setRecycledViewPool",
+    "getRecycledViewPool", "smoothScrollToPosition", "scrollToPositionWithOffset",
+    "suppressLayout", "setPreserveFocusAfterLayout",
+}
+
+TYPE_FAMILIES = [
+    ("text", TEXT_MEMBERS, TEXT_TAGS),
+    ("image", IMAGE_MEMBERS, IMAGE_TAGS),
+    ("checkable", CHECK_MEMBERS, CHECK_TAGS),
+    ("progress", PROGRESS_MEMBERS, PROGRESS_TAGS),
+    ("recycler", RECYCLER_MEMBERS, RECYCLER_TAGS),
+]
+
+# Every tag this check actually understands. A widget outside this set is a project custom
+# view or a third-party widget whose API is unknown here, so it is never judged: ScoreRing
+# legitimately declares its own setProgress(Float), and flagging that would be noise.
+#
+# Containers must be listed explicitly. They are standard widgets with a known API that
+# simply has no text/image/checkable/progress/recycler surface, so a text-only member called
+# on one is a real error. Leaving them out made the check skip the exact bug it exists for:
+# btnFreeze is a LinearLayout row, and `btnFreeze.text` is what broke CI.
+CONTAINER_TAGS = {
+    "LinearLayout", "FrameLayout", "RelativeLayout", "GridLayout", "TableLayout",
+    "TableRow", "ScrollView", "HorizontalScrollView", "NestedScrollView", "View",
+    "ViewGroup", "Space", "include", "merge",
+    "androidx.constraintlayout.widget.ConstraintLayout",
+    "androidx.constraintlayout.widget.Guideline",
+    "androidx.coordinatorlayout.widget.CoordinatorLayout",
+    "androidx.core.widget.NestedScrollView",
+    "androidx.appcompat.widget.LinearLayoutCompat",
+    "androidx.appcompat.widget.Toolbar",
+    "com.google.android.material.appbar.AppBarLayout",
+    "com.google.android.material.appbar.MaterialToolbar",
+    "com.google.android.material.card.MaterialCardView",
+    "com.google.android.material.tabs.TabLayout",
+}
+
+KNOWN_TAGS = set(CONTAINER_TAGS)
+for _fam, _members, _tags in TYPE_FAMILIES:
+    KNOWN_TAGS |= _tags
+
+
+def type_mismatch(member, tag):
+    """Return the family name when `member` is exclusive to a family `tag` does not belong to.
+
+    Returns None when the member is not family-specific, or when the tag is not a widget this
+    check knows, which keeps custom and third-party views out of the result.
+    """
+    if tag not in KNOWN_TAGS:
+        return None
+    for fam, members, tags in TYPE_FAMILIES:
+        if member in members and tag not in tags:
+            return fam
+    return None
+
+
+def resolve_member(layout, member):
+    """Return (kind, payload) for a binding member.
+
+    kind is "widget" with the widget tag, "binding" with the included layout name, or None
+    when the id is not declared in that layout at all.
+    """
+    tag = id_tag.get(layout, {}).get(member)
+    if tag is None:
+        return None, None
+    if tag == "include":
+        return "binding", include_map.get(layout, {}).get(member)
+    return "widget", tag
+
+
+for f in glob.glob(os.path.join(JAVA, "**/*.kt"), recursive=True):
+    src = open(f, encoding="utf-8").read()
+    rel = os.path.relpath(f, ROOT)
+
+    var_to_layout = {}
+    for prefix, rest in set(BINDING_RE.findall(src)):
+        layout = prefix.lower() + "_" + re.sub(r"(?<!^)(?=[A-Z])", "_", rest).lower()
+        if layout not in layout_ids:
+            continue
+        cls = prefix + rest + "Binding"
+        for var in re.findall(r"\b(?:val|var)\s+(\w+)\s*:\s*" + cls + r"\b", src):
+            var_to_layout[var] = layout
+        for var in re.findall(r"\b(\w+)\s*=\s*" + cls + r"\.inflate", src):
+            var_to_layout[var] = layout
+        for var in re.findall(r"\b(?:val|var)\s+(\w+)\s*=\s*" + cls + r"\.inflate", src):
+            var_to_layout[var] = layout
+        for var in re.findall(r"\b(?:val|var)\s+(\w+)\s*:\s*" + cls + r"\s*\)", src):
+            var_to_layout[var] = layout
+
+    for var, layout in var_to_layout.items():
+        # Walk the whole access chain, not just the first segment. `binding.btnFreeze.text`
+        # yields the chain [btnFreeze, text]; the first segment resolves to a widget and the
+        # second is the member actually being called on it. Matching only the first segment
+        # is why an earlier version of this check stayed silent on the real CI failure.
+        chain_re = re.compile(r"\b" + re.escape(var) + r"((?:\.[a-z][A-Za-z0-9]*)+)")
+        for chain in set(chain_re.findall(src)):
+            segs = chain.strip().strip(".").split(".")
+            cur_layout = layout
+            for i, seg in enumerate(segs):
+                kind, payload = resolve_member(cur_layout, seg)
+                if kind is None:
+                    # Not an id in this layout. Inside an included layout that is a real
+                    # error; at the top level it is just a method or a non-id member.
+                    if cur_layout != layout:
+                        failures.append(
+                            f"{rel}: {var}.{'.'.join(segs[:i + 1])} not in {cur_layout}.xml"
+                        )
+                    break
+                if kind == "binding":
+                    if payload not in layout_ids:
+                        failures.append(
+                            f"{rel}: {var}.{seg} includes @layout/{payload}, which does not exist"
+                        )
+                        break
+                    cur_layout = payload
+                    continue
+                # seg is a widget; the next segment is what is being called on it.
+                if i + 1 < len(segs):
+                    nxt = segs[i + 1]
+                    fam = type_mismatch(nxt, payload)
+                    if fam:
+                        failures.append(
+                            f"{rel}: {var}.{'.'.join(segs[:i + 2])} is {fam}-only, but "
+                            f"{cur_layout}.xml declares {seg} as {payload}"
+                        )
+                break
 
 # ---------------------------------------------------------------- report
 

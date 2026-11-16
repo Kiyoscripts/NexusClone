@@ -154,7 +154,7 @@
     <string name="snapshot_created">Snapshot written</string>
     <string name="snapshot_restored">Snapshot restored</string>
     <string name="snapshot_failed">Snapshot failed: %s</string>
-    <string name="clone_created">Clone created</string>
+    <string name="clone_created">Clone created: %1$s</string>
     <string name="clone_failed">Clone failed: %s</string>
     <string name="clone_count">How many clones?</string>
     <string name="confirm_delete">Delete this clone and all its data?</string>

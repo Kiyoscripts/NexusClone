@@ -154,7 +154,7 @@ class InstanceDetailActivity : AppCompatActivity() {
 
         binding.subMacro.text = ""
 
-        binding.btnFreeze.text = if (inst.frozen) {
+        binding.btnFreezeLabel.text = if (inst.frozen) {
             getString(R.string.instance_unfreeze)
         } else {
             getString(R.string.nc_freeze)

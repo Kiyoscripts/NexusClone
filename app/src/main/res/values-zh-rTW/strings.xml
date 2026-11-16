@@ -153,7 +153,7 @@
     <string name="snapshot_created">快照已寫入</string>
     <string name="snapshot_restored">快照已還原</string>
     <string name="snapshot_failed">快照失敗：%s</string>
-    <string name="clone_created">複製已建立</string>
+    <string name="clone_created">複製已建立：%1$s</string>
     <string name="clone_failed">複製失敗：%s</string>
     <string name="clone_count">要複製幾個？</string>
     <string name="confirm_delete">刪除該複製及其全部資料？</string>

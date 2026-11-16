@@ -154,7 +154,7 @@
     <string name="snapshot_created">快照已写入</string>
     <string name="snapshot_restored">快照已恢复</string>
     <string name="snapshot_failed">快照失败：%s</string>
-    <string name="clone_created">克隆已创建</string>
+    <string name="clone_created">克隆已创建：%1$s</string>
     <string name="clone_failed">克隆失败：%s</string>
     <string name="clone_count">克隆几个？</string>
     <string name="confirm_delete">删除该克隆及其全部数据？</string>

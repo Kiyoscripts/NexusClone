@@ -13,3 +13,5 @@ Bcore/build
 *.apk
 *.aar
 !app/libs/*.aar
+__pycache__/
+*.pyc
