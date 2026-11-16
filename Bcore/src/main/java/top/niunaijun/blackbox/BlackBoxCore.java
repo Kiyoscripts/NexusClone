@@ -1184,9 +1184,10 @@ public class BlackBoxCore extends ClientConfiguration {
 
     public InstallResult installPackageAsUser(String packageName, int userId) {
         try {
-            // Prevent cloning BlackBox app from within BlackBox
+            // Refuse to clone the container into itself: the guest would load a second
+            // copy of the host, which loads a third, and so on.
             if (packageName.equals(getHostPkg())) {
-                return new InstallResult().installError("Cannot clone BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.");
+                return new InstallResult().installError("NexusClone cannot be installed inside itself. That would recurse without end.");
             }
             
             PackageInfo packageInfo = getPackageManager().getPackageInfo(packageName, 0);

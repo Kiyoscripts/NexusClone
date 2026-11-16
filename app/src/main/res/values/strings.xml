@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">BlackBox</string>
+    <string name="app_name">NexusClone</string>
     <string name="choose">Choose</string>
     <string name="choose_app">Choose App</string>
     <string name="installed_app">Installed App</string>
@@ -37,10 +37,11 @@
     <string name="app_shortcut">Create Shortcut</string>
     <string name="shortcut_name">Shortcut Name</string>
     <string name="try_add_shortcut">Try Added To Desktop</string>
-    <string name="add_shortcut_fail_msg">If the addition fails, please go to system settings and open the permission of "create desktop shortcut" for BlackBox</string>
+    <string name="add_shortcut_fail_msg">If the addition fails, please go to system settings and open the permission of "create desktop shortcut" for NexusClone</string>
     <string name="install_success">Installed Successfully</string>
     <string name="install_fail">Installed Failed: %s</string>
     <string name="install_fail_no_msg">Installed Failed</string>
+    <string name="install_self_refused">NexusClone cannot be installed inside itself. That would recurse without end.</string>
     <string name="uninstall_success">Uninstalled Successfully</string>
     <string name="uninstall_fail">Uninstalled Failed</string>
     <string name="uninstall_app">Uninstall App</string>
@@ -112,6 +113,7 @@
     <string name="keepalive_setting_summary">Keeps clones resident in the background. Off by default because it can stall the host on some devices.</string>
     <string name="apps_empty_title">No apps cloned yet</string>
     <string name="apps_empty_body">Tap the + button to pick an APK and install it into this user.</string>
+    <string name="apps_error_title">This page could not be loaded</string>
     <string name="macro_record">Record</string>
     <string name="macro_stop">Stop</string>
     <string name="macro_play">Play</string>
@@ -140,4 +142,23 @@
     <string name="instance_float">Floating window</string>
     <string name="quota_set">Set quota (MB, 0 = unlimited)</string>
     <string name="float_permission">Overlay permission required</string>
+
+    <!-- Layout strings that were previously hardcoded in XML -->
+    <string name="identity_apply">Apply to this clone</string>
+    <string name="identity_use_default">Use container default</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="proxy_name">Name</string>
+    <string name="proxy_name_hint">Profile name</string>
+    <string name="proxy_type">Type</string>
+    <string name="proxy_host_hint">Host or IP</string>
+    <string name="proxy_port_hint">Port</string>
+    <string name="fab_clone_app">Clone an app into this user</string>
+    <string name="fab_install_module">Install an Xposed module</string>
+    <string name="cd_instance_preview">Preview of the cloned app</string>
+    <string name="cd_app_icon">App icon</string>
+    <string name="user_default">User %d</string>
+    <string name="user_remark">User remark</string>
+    <string name="error_title">Error</string>
+    <string name="error_init_failed">Failed to initialize: %s</string>
 </resources>

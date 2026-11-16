@@ -112,9 +112,15 @@ public class WebViewProxy extends ClassInvocationStub {
                         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                     }
                     // Set user agent
+                    //
+                    // The container name is appended to the guest's UA. That is a
+                    // fingerprinting surface: a guest that greps its own UA for a known
+                    // container marker can tell it is running inside one. It is kept
+                    // because removing it changes what every guest reports, but the marker
+                    // is now the product name rather than the upstream fork's.
                     String userAgent = settings.getUserAgentString();
-                    if (userAgent != null && !userAgent.contains("BlackBox")) {
-                        settings.setUserAgentString(userAgent + " BlackBox");
+                    if (userAgent != null && !userAgent.contains("NexusClone")) {
+                        settings.setUserAgentString(userAgent + " NexusClone");
                     }
                     Slog.d(TAG, "WebView: Configured successfully");
                 }

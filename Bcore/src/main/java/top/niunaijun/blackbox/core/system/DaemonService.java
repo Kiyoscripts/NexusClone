@@ -23,7 +23,7 @@ public class DaemonService extends Service {
     public static final String TAG = "DaemonService";
     private static final int NOTIFY_ID = BlackBoxCore.getHostPkg().hashCode();
     private static final String CHANNEL_ID = "blackbox_daemon_channel";
-    private static final String CHANNEL_NAME = "BlackBox Daemon Service";
+    private static final String CHANNEL_NAME = "NexusClone Daemon Service";
     private static final String CHANNEL_DESCRIPTION = "Keeps BlackBox core services running";
 
     @Override
@@ -151,7 +151,7 @@ public class DaemonService extends Service {
     private Notification createNotification() {
         try {
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("BlackBox Core")
+                .setContentTitle("NexusClone Core")
                 .setContentText("Core services are running")
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setPriority(NotificationCompat.PRIORITY_LOW)

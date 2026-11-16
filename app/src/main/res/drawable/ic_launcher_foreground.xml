@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NexusClone adaptive foreground.
+  Two overlapping rounded squares (clone / duplicate mark), no text.
+  Mark bbox is 52x52 centred at (54,54), so it sits inside the centre
+  72x72 safe zone (18..90) with 10 units of margin on every side.
+  Corner radius 8.8 on a 40-unit square = 22%.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+        android:width="108dp"
+        android:height="108dp"
+        android:viewportWidth="108"
+        android:viewportHeight="108">
+
+    <!-- Back square, white @ 45% alpha, with a 3.2-unit gap punched out
+         around the front square (evenOdd: outer rect minus gap rect). -->
+    <path
+            android:fillColor="#73FFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M36.8,28 L59.2,28 A8.8,8.8 0 0 1 68,36.8 L68,59.2 A8.8,8.8 0 0 1 59.2,68 L36.8,68 A8.8,8.8 0 0 1 28,59.2 L28,36.8 A8.8,8.8 0 0 1 36.8,28 Z M48.8,36.8 L71.2,36.8 A12,12 0 0 1 83.2,48.8 L83.2,71.2 A12,12 0 0 1 71.2,83.2 L48.8,83.2 A12,12 0 0 1 36.8,71.2 L36.8,48.8 A12,12 0 0 1 48.8,36.8 Z" />
+
+    <!-- Front square, solid light lavender #C9C9F0. -->
+    <path
+            android:fillColor="#FFC9C9F0"
+            android:pathData="M48.8,40 L71.2,40 A8.8,8.8 0 0 1 80,48.8 L80,71.2 A8.8,8.8 0 0 1 71.2,80 L48.8,80 A8.8,8.8 0 0 1 40,71.2 L40,48.8 A8.8,8.8 0 0 1 48.8,40 Z" />
+</vector>

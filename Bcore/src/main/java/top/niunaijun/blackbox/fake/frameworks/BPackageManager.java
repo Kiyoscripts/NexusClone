@@ -524,7 +524,7 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
                         String hostPackageName = BlackBoxCore.getHostPkg();
                         if (packageName.equals(hostPackageName)) {
                             Log.w(TAG, "Attempt to install BlackBox app detected and blocked: " + packageName);
-                            return new InstallResult().installError("Cannot clone BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.");
+                            return new InstallResult().installError("NexusClone cannot be installed inside itself. That would recurse without end.");
                         }
                     }
                 } catch (Exception e) {

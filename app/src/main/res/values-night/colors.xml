@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Dark theme surface and text overrides.
+
+      The brand ramp is deliberately NOT overridden: indigo reads correctly on both a white
+      and a near-black background, and keeping it fixed means the toolbar, the FAB and the
+      splash all stay recognisably the same product in either theme.
+    -->
+
+    <color name="surface">#12121A</color>
+    <color name="surface_raised">#1C1C26</color>
+    <color name="surface_sunken">#0C0C12</color>
+
+    <color name="primary_text">#ECECF4</color>
+    <color name="secondary_text">#9A9AAC</color>
+
+    <color name="divider">#33FFFFFF</color>
+    <color name="preview_placeholder">#0C0C12</color>
+
+    <color name="status_pass">#66BB6A</color>
+    <color name="status_fail">#EF5350</color>
+</resources>

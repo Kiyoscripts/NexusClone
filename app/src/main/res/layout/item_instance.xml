@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Instance grid cell.
+
+  The previous version had a FrameLayout with layout_height="0dp" and
+  layout_weight="1" inside a vertical LinearLayout whose own height was
+  wrap_content. A weight of 1 against a wrap_content parent resolves to zero
+  remaining space, so the preview frame collapsed and the 160dp ImageView
+  inside it was clipped to nothing on some devices. The frame is now a fixed
+  height and the ImageView fills it.
+-->
 <androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_margin="6dp"
     android:foreground="?android:attr/selectableItemBackground"
-    app:cardBackgroundColor="@color/white"
-    app:cardCornerRadius="10dp"
+    app:cardBackgroundColor="@color/surface_raised"
+    app:cardCornerRadius="12dp"
     app:cardElevation="2dp">
 
     <LinearLayout
@@ -17,15 +27,14 @@
 
         <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1">
+            android:layout_height="140dp">
 
             <ImageView
                 android:id="@+id/preview"
                 android:layout_width="match_parent"
-                android:layout_height="160dp"
-                android:background="#1A1A1A"
-                android:contentDescription="@string/nav_instances"
+                android:layout_height="match_parent"
+                android:background="@color/preview_placeholder"
+                android:contentDescription="@string/cd_instance_preview"
                 android:scaleType="centerCrop" />
 
             <TextView
@@ -34,7 +43,7 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="top|end"
                 android:layout_margin="4dp"
-                android:background="#CC000000"
+                android:background="@color/state_badge_scrim"
                 android:paddingHorizontal="6dp"
                 android:paddingVertical="2dp"
                 android:textColor="@color/white"
@@ -42,38 +51,37 @@
 
             <ImageView
                 android:id="@+id/icon"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:layout_gravity="bottom|start"
-                android:layout_margin="4dp" />
+                android:layout_margin="4dp"
+                android:contentDescription="@string/cd_app_icon" />
         </FrameLayout>
 
         <TextView
             android:id="@+id/label"
+            style="@style/Text.Label"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="8dp"
             android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/primary_text"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:maxLines="1" />
 
         <TextView
             android:id="@+id/subtitle"
+            style="@style/Text.Caption"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
             android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/secondary_text"
-            android:textSize="11sp" />
+            android:maxLines="1" />
 
         <ProgressBar
             android:id="@+id/quotaBar"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="3dp"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:max="100"
             android:visibility="gone" />
 

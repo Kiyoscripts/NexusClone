@@ -716,7 +716,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class getCurrentUser extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Object blackBox = BRUserInfo.get()._new(BActivityThread.getUserId(), "BlackBox", BRUserInfo.get().FLAG_PRIMARY());
+            Object blackBox = BRUserInfo.get()._new(BActivityThread.getUserId(), "NexusClone", BRUserInfo.get().FLAG_PRIMARY());
             return blackBox;
         }
     }

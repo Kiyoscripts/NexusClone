@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  NexusClone splash screen.
+  Solid #12121A background with the clone mark centred as a bitmap.
+  The background is an inline <shape> so this file has no dependency on a
+  @color resource; the bitmap uses @mipmap/ic_launcher, which resolves to the
+  density-appropriate PNG (192px at xxxhdpi).
+-->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@android:color/white" />
+            <solid android:color="#FF12121A" />
         </shape>
     </item>
-
     <item>
         <bitmap
+                android:src="@mipmap/ic_launcher"
                 android:gravity="center"
-                android:src="@mipmap/ic_launcher" />
+                android:filter="true" />
     </item>
 </layer-list>

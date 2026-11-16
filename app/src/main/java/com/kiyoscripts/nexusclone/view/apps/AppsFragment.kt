@@ -189,10 +189,42 @@ class AppsFragment : Fragment() {
             setOnLongClick()
             return viewBinding.root
         } catch (e: Exception) {
-            Log.e(TAG, "Error in onCreateView: ${e.message}")
-            // Return a simple view to prevent crash
-            return _binding?.root ?: View(requireContext())
+            Log.e(TAG, "Error in onCreateView: ${e.message}", e)
+            // Do NOT return a bare View here. A plain View has no background and no
+            // children, so it renders as an opaque black rectangle: the user sees a broken
+            // screen with no explanation and the failure is invisible outside logcat. Show
+            // the real reason instead, and keep it scrollable so a long stack fits.
+            return buildErrorView(e)
         }
+    }
+
+    /**
+     * Minimal, dependency-free error surface for a page that failed to inflate.
+     *
+     * Built in code rather than inflated so it cannot itself fail for the same reason the
+     * real layout did.
+     */
+    private fun buildErrorView(cause: Throwable): View {
+        val ctx = requireContext()
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val scroll = android.widget.ScrollView(ctx)
+        val column = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
+        column.addView(android.widget.TextView(ctx).apply {
+            text = getString(R.string.apps_error_title)
+            setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.primary_text))
+            textSize = 16f
+        })
+        column.addView(android.widget.TextView(ctx).apply {
+            text = cause.message ?: cause.javaClass.simpleName
+            setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.secondary_text))
+            textSize = 13f
+            setPadding(0, pad / 2, 0, 0)
+        })
+        scroll.addView(column)
+        return scroll
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -216,6 +248,20 @@ class AppsFragment : Fragment() {
             }
             
             viewModel.getInstalledAppsWithRetry(userID)
+
+            // Pick up an install that was requested while this page was not alive.
+            // ViewPager2 only keeps a small window of pages instantiated, so an install
+            // aimed at a page further away has nobody to deliver it to at the moment the
+            // picker returns. MainActivity parks it and we claim it here.
+            try {
+                val deferred = (activity as? MainActivity)?.consumePendingInstall(userID)
+                if (deferred != null) {
+                    Log.d(TAG, "applying deferred install for user $userID")
+                    installApk(deferred)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error applying deferred install: ${e.message}")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error in onStart: ${e.message}")
         }

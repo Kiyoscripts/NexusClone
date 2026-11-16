@@ -696,7 +696,7 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             String packageName = packageArchiveInfo.packageName;
             String hostPackageName = BlackBoxCore.getHostPkg();
             if (packageName.equals(hostPackageName)) {
-                return result.installError("Cannot clone BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.");
+                return result.installError("NexusClone cannot be installed inside itself. That would recurse without end.");
             }
             
             // Also check for common BlackBox-related package names to prevent cloning

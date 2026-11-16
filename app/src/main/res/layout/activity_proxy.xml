@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Proxy screen.
+
+  Same two structural bugs as activity_identity.xml: a match_parent-height child
+  inside a ScrollView (which stops the page scrolling) and a weighted 0dp
+  RecyclerView inside a wrap_content parent (which collapses the list to zero
+  height). Both fixed. Hints moved to string resources.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -11,11 +19,12 @@
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="vertical"
             android:padding="16dp">
 
@@ -23,7 +32,8 @@
                 android:id="@+id/proxyName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Name"
+                android:hint="@string/proxy_name_hint"
+                android:importantForAutofill="no"
                 android:inputType="text"
                 android:maxLines="1" />
 
@@ -37,15 +47,17 @@
                 android:id="@+id/proxyHost"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Host"
-                android:inputType="text"
+                android:hint="@string/proxy_host_hint"
+                android:importantForAutofill="no"
+                android:inputType="textUri"
                 android:maxLines="1" />
 
             <EditText
                 android:id="@+id/proxyPort"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Port"
+                android:hint="@string/proxy_port_hint"
+                android:importantForAutofill="no"
                 android:inputType="number"
                 android:maxLines="1" />
 
@@ -53,7 +65,8 @@
                 android:id="@+id/proxyUser"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Username (optional)"
+                android:hint="@string/proxy_user"
+                android:importantForAutofill="no"
                 android:inputType="text"
                 android:maxLines="1" />
 
@@ -61,28 +74,31 @@
                 android:id="@+id/proxyPass"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Password (optional)"
+                android:hint="@string/proxy_pass"
+                android:importantForAutofill="no"
                 android:inputType="textPassword"
                 android:maxLines="1" />
 
             <Button
                 android:id="@+id/btnSave"
+                style="@style/Button.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Save" />
+                android:text="@string/save" />
 
             <Button
                 android:id="@+id/btnDelete"
+                style="@style/Button.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Delete" />
+                android:text="@string/delete" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recycler"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:nestedScrollingEnabled="false" />
 
         </LinearLayout>
 

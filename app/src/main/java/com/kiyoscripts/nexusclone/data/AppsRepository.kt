@@ -351,27 +351,34 @@ class AppsRepository {
 
     fun installApk(source: String, userId: Int, resultLiveData: MutableLiveData<String>) {
         try {
-            // Check if this is an attempt to install BlackBox app
-            if (source.contains("blackbox") || source.contains("niunaijun") || 
-                source.contains("vspace") || source.contains("virtual")) {
-                // Additional check for the actual BlackBox app
+            // Refuse to install the container into itself.
+            //
+            // The cheap pre-filter below is a substring test on the source string, which is
+            // only a hint: a renamed apk will not match it. The authoritative check is the
+            // package-name comparison inside, which compares the archive's package against
+            // the host package. The pre-filter exists so the common case does not pay for
+            // an archive parse.
+            if (source.contains("nexusclone") || source.contains("blackbox") ||
+                source.contains("niunaijun") || source.contains("vspace") ||
+                source.contains("virtual")
+            ) {
                 try {
                     val blackBoxCore = BlackBoxCore.get()
                     val hostPackageName = BlackBoxCore.getHostPkg()
-                    
+
                     // If it's a file path, try to check the package name
                     if (!URLUtil.isValidUrl(source)) {
                         val file = File(source)
                         if (file.exists()) {
                             val packageInfo = BlackBoxCore.getPackageManager().getPackageArchiveInfo(source, 0)
                             if (packageInfo != null && packageInfo.packageName == hostPackageName) {
-                                resultLiveData.postValue("Cannot install BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.")
+                                resultLiveData.postValue(getString(R.string.install_self_refused))
                                 return
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Could not verify if this is BlackBox app: ${e.message}")
+                    Log.w(TAG, "Could not verify whether this is the host app: ${e.message}")
                 }
             }
             

@@ -2,11 +2,11 @@ package com.kiyoscripts.nexusclone.view.main
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
@@ -36,9 +36,7 @@ class MainActivity : LoadingActivity() {
 
     private val viewBinding: ActivityMainBinding by inflate()
 
-    private lateinit var mViewPagerAdapter: ViewPagerAdapter
-
-    private val fragmentList = mutableListOf<AppsFragment>()
+    private val mViewPagerAdapter by lazy { ViewPagerAdapter(this) }
 
     private var currentUser = 0
 
@@ -164,14 +162,11 @@ class MainActivity : LoadingActivity() {
             // publishing its provider the call blocked, onCreate never returned, and the
             // framework eventually ANR'd the process.
             //
-            // Build the pager with a single default page immediately so the window can
-            // draw, then swap in the real user list once the engine answers.
-            val initialUser = 0
-            fragmentList.add(AppsFragment.newInstance(initialUser))
-            currentUser = initialUser
+            // So the pager starts empty and the window draws immediately. loadUsersAsync()
+            // fills it in once the engine answers. An empty adapter is a valid state for
+            // ViewPager2; the empty-state view below covers the gap.
+            currentUser = 0
 
-            mViewPagerAdapter = ViewPagerAdapter(this)
-            mViewPagerAdapter.replaceData(fragmentList)
             viewBinding.viewPager.adapter = mViewPagerAdapter
             viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
             viewBinding.viewPager.registerOnPageChangeCallback(object :
@@ -179,7 +174,12 @@ class MainActivity : LoadingActivity() {
                 override fun onPageSelected(position: Int) {
                     try {
                         super.onPageSelected(position)
-                        currentUser = fragmentList[position].userID
+                        // Read the id from the adapter, not from a parallel fragment list:
+                        // the adapter is the single source of truth for what is on screen,
+                        // and a stale list is exactly how the old code ended up pointing at
+                        // a virtual user that did not exist.
+                        val userId = mViewPagerAdapter.userIdAt(position) ?: return
+                        currentUser = userId
                         updateUserRemark(currentUser)
                         showFloatButton(true)
                     } catch (e: Exception) {
@@ -235,18 +235,15 @@ class MainActivity : LoadingActivity() {
                     return@launch
                 }
 
-                // Build a fresh list rather than mutating fragmentList in place:
-                // ViewPagerAdapter.replaceData() keeps a reference to the list it
-                // was given, so clearing the original would empty the adapter's
-                // backing store before notifyDataSetChanged() ran.
-                val rebuilt = mutableListOf<AppsFragment>()
-                userList.forEach { rebuilt.add(AppsFragment.newInstance(it.id)) }
-                currentUser = userList.firstOrNull()?.id ?: 0
-                rebuilt.add(AppsFragment.newInstance(userList.size))
-                fragmentList.clear()
-                fragmentList.addAll(rebuilt)
-                mViewPagerAdapter.replaceData(rebuilt)
+                // Hand the adapter the real user ids in order. It owns the page set now;
+                // there is no parallel fragment list to keep in sync, and no trailing
+                // "add user" page (see ViewPagerAdapter for why that page was removed).
+                val ids = userList.map { it.id }
+                currentUser = ids.firstOrNull() ?: 0
+                mViewPagerAdapter.submit(ids)
                 viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
+                updateDotsVisibility()
+                updateUserRemark(currentUser)
             } catch (e: CancellationException) {
                 // The Activity went away while we were waiting; let the scope unwind.
                 throw e
@@ -268,7 +265,17 @@ class MainActivity : LoadingActivity() {
         try {
             viewBinding.fab.setOnClickListener {
                 try {
-                    val userId = viewBinding.viewPager.currentItem
+                    // Read the user id from the adapter rather than from
+                    // viewPager.currentItem. currentItem is a page index; the install
+                    // target is a virtual user id, and the two only coincide when the
+                    // users happen to be numbered 0..n in page order. Passing the index
+                    // installed the apk into the wrong user as soon as any user had been
+                    // deleted and the ids had gaps.
+                    val userId = mViewPagerAdapter.userIdAt(viewBinding.viewPager.currentItem)
+                    if (userId == null) {
+                        Log.w(TAG, "clone tapped with no page selected")
+                        return@setOnClickListener
+                    }
                     val intent = Intent(this, ListActivity::class.java)
                     intent.putExtra("userID", userId)
                     apkPathResult.launch(intent)
@@ -278,6 +285,19 @@ class MainActivity : LoadingActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in initFab: ${e.message}")
+        }
+    }
+
+    /**
+     * A single dot under a single page is noise. Hide the indicator until there is
+     * something to indicate.
+     */
+    private fun updateDotsVisibility() {
+        try {
+            viewBinding.dotsIndicator.visibility =
+                if (mViewPagerAdapter.itemCount > 1) View.VISIBLE else View.GONE
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in updateDotsVisibility: ${e.message}")
         }
     }
 
@@ -310,23 +330,21 @@ class MainActivity : LoadingActivity() {
             }
             val userList = BlackBoxCore.get().users
 
-            // Rebuild and hand the adapter a fresh list, exactly as loadUsersAsync() does.
-            //
-            // The previous version appended to `fragmentList` and called
-            // notifyDataSetChanged(), but replaceData() had already given the adapter a
-            // different list object, so the adapter re-read its own untouched list and the
-            // new page never appeared. Worse, if the adapter had ever grown past
-            // fragmentList, onPageSelected would index past the end of this list.
-            val rebuilt = mutableListOf<AppsFragment>()
-            userList.forEach { rebuilt.add(AppsFragment.newInstance(it.id)) }
-            // Trailing page is the "add user" entry, so there is always one more page than
-            // there are virtual users.
-            rebuilt.add(AppsFragment.newInstance(userList.size))
-
-            fragmentList.clear()
-            fragmentList.addAll(rebuilt)
-            mViewPagerAdapter.replaceData(rebuilt)
+            // Preserve the page the user is actually looking at. Rebuilding the adapter
+            // resets ViewPager2 to position 0, which yanks the user back to the first user
+            // every time they install or uninstall something on a later page.
+            val previousUser = currentUser
+            val ids = userList.map { it.id }
+            mViewPagerAdapter.submit(ids)
             viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
+            updateDotsVisibility()
+
+            val restored = mViewPagerAdapter.indexOfUser(previousUser)
+            if (restored >= 0 && restored != viewBinding.viewPager.currentItem) {
+                viewBinding.viewPager.setCurrentItem(restored, false)
+            }
+            currentUser = mViewPagerAdapter.userIdAt(viewBinding.viewPager.currentItem) ?: 0
+            updateUserRemark(currentUser)
         } catch (e: Exception) {
             Log.e(TAG, "Error in scanUser: ${e.message}")
         }
@@ -354,7 +372,28 @@ class MainActivity : LoadingActivity() {
                         val userId = data.getIntExtra("userID", 0)
                         val source = data.getStringExtra("source")
                         if (source != null) {
-                            fragmentList[userId].installApk(source)
+                            // Resolve the page that owns this virtual user instead of
+                            // indexing a list by user id. The old code did
+                            // `fragmentList[userId]`, which conflated a page index with a
+                            // virtual user id and threw IndexOutOfBoundsException as soon as
+                            // the two diverged (any deleted user leaves a gap in the ids).
+                            val page = mViewPagerAdapter.indexOfUser(userId)
+                            if (page < 0) {
+                                Log.w(TAG, "install result for unknown user $userId")
+                                return@let
+                            }
+                            val fragment = supportFragmentManager.findFragmentByTag(
+                                "f" + mViewPagerAdapter.getItemId(page)
+                            ) as? AppsFragment
+                            if (fragment != null) {
+                                fragment.installApk(source)
+                            } else {
+                                // The page is not instantiated (ViewPager2 only keeps a
+                                // window of pages alive). Move to it first; the install is
+                                // then applied by the fragment once it exists.
+                                viewBinding.viewPager.setCurrentItem(page, false)
+                                pendingInstall = userId to source
+                            }
                         }
                     }
                 }
@@ -362,6 +401,20 @@ class MainActivity : LoadingActivity() {
                 Log.e(TAG, "Error handling APK path result: ${e.message}")
             }
         }
+
+    /**
+     * An install requested for a page that was not alive yet. Applied by
+     * [consumePendingInstall] once that page's fragment exists.
+     */
+    private var pendingInstall: Pair<Int, String>? = null
+
+    /** Called by AppsFragment once it is attached, to pick up a deferred install. */
+    fun consumePendingInstall(userId: Int): String? {
+        val pending = pendingInstall ?: return null
+        if (pending.first != userId) return null
+        pendingInstall = null
+        return pending.second
+    }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         try {
@@ -384,20 +437,8 @@ class MainActivity : LoadingActivity() {
                     com.kiyoscripts.nexusclone.ui.diag.DiagnosticsActivity.start(this)
                 }
 
-                R.id.main_git -> {
-                    val intent =
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/ALEX5402/NewBlackbox"))
-                    startActivity(intent)
-                }
-
                 R.id.main_setting -> {
                     SettingActivity.start(this)
-                }
-
-                R.id.main_tg -> {
-                    val intent =
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/newblackboxa"))
-                    startActivity(intent)
                 }
 
                 R.id.fake_location -> {

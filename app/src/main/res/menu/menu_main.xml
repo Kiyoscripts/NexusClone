@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Main overflow menu.
+
+  The upstream fork's entries ("Open Source" -> ALEX5402/NewBlackbox, "Telegram Group"
+  -> t.me/newblackboxa) are gone. They pointed users at a different project's repo and
+  chat, which is both confusing and wrong: this build is not that project, and its
+  support channel is not that group.
+
+  What is left is what the app actually does. Instances and Diagnostics are the two
+  screens that were previously buried here and are now the primary destinations, so
+  they stay at the top.
+-->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:app="http://schemas.android.com/apk/res-auto">
 
@@ -18,17 +30,8 @@
             app:showAsAction="never" />
 
     <item
-        android:id="@+id/fake_location"
-        android:title="@string/fake_location"
-        app:showAsAction="never" />
-
-    <item
-            android:id="@+id/main_git"
-            android:title="@string/open_source_path"
+            android:id="@+id/fake_location"
+            android:title="@string/fake_location"
             app:showAsAction="never" />
 
-    <item
-            android:id="@+id/main_tg"
-            android:title="@string/tg_group"
-            app:showAsAction="never" />
 </menu>

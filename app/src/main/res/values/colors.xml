@@ -1,10 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#3F3F3F</color>
-    <color name="primary_dark">#3F3F3F</color>
-    <color name="primary_light">#3F3F3F</color>
-    <color name="accent">#ffffff</color>
-    <color name="primary_text">#212121</color>
-    <color name="secondary_text">#757575</color>
+    <!--
+      NexusClone palette.
+
+      The upstream fork shipped a single flat grey (#3F3F3F) used for primary, primary_dark
+      and primary_light simultaneously, which meant the toolbar, the status bar and every
+      accent were the same value and nothing had hierarchy. This is a proper tonal ramp:
+      one indigo brand colour, a darker variant for the status bar, and a light lavender
+      accent that reads on both the indigo surfaces and the white content background.
+
+      values-night/colors.xml overrides the surface and text colours; the brand ramp stays
+      the same in both themes so the app keeps its identity.
+    -->
+
+    <!-- Brand ramp -->
+    <color name="brand_indigo">#4F46E5</color>
+    <color name="brand_indigo_dark">#3730A3</color>
+    <color name="brand_indigo_light">#6366F1</color>
+    <color name="brand_lavender">#C9C9F0</color>
+
+    <!-- Legacy names kept so existing layouts and code keep compiling. They now point at
+         the brand ramp instead of the flat grey. -->
+    <color name="primary">@color/brand_indigo</color>
+    <color name="primary_dark">@color/brand_indigo_dark</color>
+    <color name="primary_light">@color/brand_indigo_light</color>
+    <color name="accent">@color/brand_lavender</color>
+
+    <!-- Surfaces -->
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_raised">#FFFFFF</color>
+    <color name="surface_sunken">#F4F4F9</color>
+    <color name="surface_overlay">#CC000000</color>
+
+    <!-- Text -->
+    <color name="primary_text">#1A1A22</color>
+    <color name="secondary_text">#6B6B7B</color>
+    <color name="text_on_brand">#FFFFFF</color>
+
+    <!-- Utility -->
     <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+    <color name="divider">#1F000000</color>
+    <color name="preview_placeholder">#1A1A22</color>
+    <color name="state_badge_scrim">#CC000000</color>
+    <color name="splash_background">#12121A</color>
+
+    <!-- Status colours for the diagnostics list -->
+    <color name="status_pass">#2E7D32</color>
+    <color name="status_fail">#C62828</color>
 </resources>

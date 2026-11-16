@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -19,6 +21,7 @@ import com.kiyoscripts.nexusclone.core.preview.PreviewCache
 import com.kiyoscripts.nexusclone.databinding.ActivityInstancesBinding
 import com.kiyoscripts.nexusclone.databinding.ItemInstanceBinding
 import com.kiyoscripts.nexusclone.ui.instance.InstanceDetailActivity
+import com.kiyoscripts.nexusclone.util.toast
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
@@ -32,6 +35,8 @@ import java.io.File
 class InstancesActivity : AppCompatActivity() {
 
     companion object {
+        private const val TAG = "InstancesActivity"
+
         fun start(context: Context) {
             context.startActivity(Intent(context, InstancesActivity::class.java))
         }
@@ -60,8 +65,11 @@ class InstancesActivity : AppCompatActivity() {
         binding.recycler.adapter = adapter
 
         binding.fab.setOnClickListener {
-            // The app picker lives in ListActivity; cloning starts from there.
-            startActivity(Intent(this, com.kiyoscripts.nexusclone.view.list.ListActivity::class.java))
+            // The app picker lives in ListActivity. Its result was previously discarded,
+            // which is why this screen could never gain a row: nothing ever called
+            // InstanceManager.create(). The picker now returns a package name and the
+            // clone is created here.
+            pickerLauncher.launch(Intent(this, com.kiyoscripts.nexusclone.view.list.ListActivity::class.java))
         }
 
         lifecycleScope.launch {
@@ -70,6 +78,42 @@ class InstancesActivity : AppCompatActivity() {
                 adapter.submit(list)
                 binding.empty.visibility =
                     if (list.isEmpty()) View.VISIBLE else View.GONE
+            }
+        }
+    }
+
+    /**
+     * Result of the app picker.
+     *
+     * ListActivity returns the chosen package name in the "source" extra with
+     * RESULT_OK. That value is a package name for an installed app, or a content/file URI
+     * when the user picked an apk from storage; InstanceManager.create() takes a package
+     * name, so a URI is installed into a fresh user first and then registered.
+     */
+    private val pickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK) return@registerForActivityResult
+        val source = result.data?.getStringExtra("source") ?: return@registerForActivityResult
+        createClone(source)
+    }
+
+    private fun createClone(source: String) {
+        lifecycleScope.launch {
+            binding.progress.visibility = View.VISIBLE
+            try {
+                val outcome = manager.create(source)
+                outcome.fold(
+                    onSuccess = {
+                        toast(getString(R.string.clone_created))
+                    },
+                    onFailure = { e ->
+                        Log.w(TAG, "clone failed: ${e.message}")
+                        toast(getString(R.string.clone_failed, e.message ?: "unknown"))
+                    }
+                )
+            } finally {
+                binding.progress.visibility = View.GONE
             }
         }
     }

@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Identity screen.
+
+  Two structural bugs fixed here. The inner LinearLayout was match_parent height
+  inside a ScrollView, which makes the scroll view believe its content is exactly
+  one screen tall and never scroll; it is now wrap_content. And the RecyclerView
+  used layout_height="0dp" with layout_weight="1" inside that scrollable
+  LinearLayout, which is meaningless — a weighted child of a wrap_content parent
+  gets zero height. The list is now a fixed-height block, which is what a
+  scrollable page can actually lay out.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -11,44 +22,48 @@
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="vertical"
             android:padding="16dp">
 
             <TextView
                 android:id="@+id/identitySummary"
+                style="@style/Text.Body"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="13sp" />
+                android:layout_height="wrap_content" />
 
             <Button
                 android:id="@+id/btnGenerate"
+                style="@style/Button.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Generate identity" />
+                android:text="@string/identity_generate" />
 
             <Button
                 android:id="@+id/btnApply"
+                style="@style/Button.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Apply to this clone" />
+                android:text="@string/identity_apply" />
 
             <Button
                 android:id="@+id/btnClear"
+                style="@style/Button.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Use container default" />
+                android:text="@string/identity_use_default" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recycler"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:nestedScrollingEnabled="false" />
 
         </LinearLayout>
 

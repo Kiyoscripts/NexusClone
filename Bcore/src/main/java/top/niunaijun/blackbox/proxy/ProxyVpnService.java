@@ -54,7 +54,7 @@ public class ProxyVpnService extends VpnService {
                 Notification.Builder fb = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? new Notification.Builder(this, CHANNEL_ID)
                         : new Notification.Builder(this);
-                notification = fb.setContentTitle("BlackBox")
+                notification = fb.setContentTitle("NexusClone")
                         .setSmallIcon(android.R.drawable.ic_dialog_info)
                         .build();
             }
@@ -119,10 +119,10 @@ public class ProxyVpnService extends VpnService {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "BlackBox VPN Service",
+                "NexusClone VPN Service",
                 NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("VPN service for BlackBox network access");
+            channel.setDescription("VPN service for NexusClone network access");
             channel.setShowBadge(false);
             
             NotificationManager notificationManager = getSystemService(NotificationManager.class);
@@ -145,7 +145,7 @@ public class ProxyVpnService extends VpnService {
         }
         
         return builder
-            .setContentTitle("BlackBox VPN Active")
+            .setContentTitle("NexusClone VPN Active")
             .setContentText("Managing network access for sandboxed apps")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
@@ -173,7 +173,7 @@ public class ProxyVpnService extends VpnService {
             Builder builder = new Builder();
             
             // Set VPN interface name
-            builder.setSession("BlackBox VPN");
+            builder.setSession("NexusClone VPN");
             
             // Add network addresses - use a private network range
             builder.addAddress("10.0.0.2", 32);
@@ -189,7 +189,7 @@ public class ProxyVpnService extends VpnService {
             builder.addAllowedApplication(getPackageName());
             
             // Set session name for debugging
-            builder.setSession("BlackBox Internet Access");
+            builder.setSession("NexusClone Internet Access");
             
             Slog.d(TAG, "VPN builder configured, establishing interface...");
             

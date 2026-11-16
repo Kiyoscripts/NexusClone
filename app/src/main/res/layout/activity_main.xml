@@ -1,9 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Main screen: one page per virtual user, each page an app grid.
+
+  The StateView that used to sit here was bound in code and never shown — it was
+  a leftover from the upstream fork, and because it was declared before the
+  ViewPager it also occupied the same constraint slot. It is gone. The empty
+  state now lives inside each AppsFragment page, where it belongs, because
+  "this user has no apps" is a per-page condition, not a whole-screen one.
+
+  The dots indicator is hidden when there is only one page: a single dot under a
+  single page is noise. MainActivity toggles it.
+-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:app="http://schemas.android.com/apk/res-auto"
         xmlns:tools="http://schemas.android.com/tools"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@color/surface"
         tools:context=".view.main.MainActivity">
 
     <include
@@ -13,48 +26,42 @@
             android:layout_height="wrap_content"
             app:layout_constraintTop_toTopOf="parent" />
 
-
-    <com.github.nukc.stateview.StateView
-            android:id="@+id/stateView"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/toolbar_layout" />
-
     <androidx.viewpager2.widget.ViewPager2
             android:id="@+id/viewPager"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="0dp"
             app:layout_constraintBottom_toTopOf="@id/dots_indicator"
-            app:layout_constraintLeft_toLeftOf="parent"
-            app:layout_constraintRight_toRightOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/toolbar_layout" />
 
     <com.tbuonomo.viewpagerdotsindicator.WormDotsIndicator
             android:id="@+id/dots_indicator"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="24dp"
-            android:paddingBottom="12dp"
-            app:dotsCornerRadius="8dp"
+            android:layout_marginBottom="20dp"
+            app:dotsColor="@color/primary_light"
+            app:dotsCornerRadius="4dp"
             app:dotsSize="8dp"
             app:dotsSpacing="4dp"
             app:dotsWidthFactor="2.5"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintLeft_toLeftOf="parent"
-            app:layout_constraintRight_toRightOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/viewPager"
-            app:progressMode="true" />
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:progressMode="true"
+            app:selectedDotColor="@color/primary" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/fab"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="24dp"
-            android:layout_marginBottom="24dp"
-            android:contentDescription="Clone an app into this user"
+            android:layout_marginEnd="20dp"
+            android:layout_marginBottom="20dp"
+            android:contentDescription="@string/fab_clone_app"
             android:src="@drawable/ic_add"
+            app:backgroundTint="@color/primary"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintRight_toRightOf="parent" />
+            app:layout_constraintEnd_toEndOf="parent"
+            app:tint="@color/text_on_brand" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
