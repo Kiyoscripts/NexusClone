@@ -51,7 +51,13 @@
     </style>
 
     <!-- Shared text styles. The layouts previously repeated the same size/colour pairs
-         inline in a dozen files. -->
+         inline in a dozen files.
+
+         AAPT resolves a dotted style name as inheritance: "Text.Title" implicitly
+         inherits from "Text". That base style must exist or resource linking fails with
+         "resource style/Text not found", so it is declared here as an empty root. -->
+    <style name="Text" />
+
     <style name="Text.Title">
         <item name="android:textColor">@color/primary_text</item>
         <item name="android:textSize">16sp</item>
