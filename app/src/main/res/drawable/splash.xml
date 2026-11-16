@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   NexusClone splash screen.
-  Solid #12121A background with the clone mark centred as a bitmap.
-  The background is an inline <shape> so this file has no dependency on a
-  @color resource; the bitmap uses @mipmap/ic_launcher, which resolves to the
-  density-appropriate PNG (192px at xxxhdpi).
+
+  IMPORTANT: this uses <item android:drawable="...">, NOT <bitmap android:src="...">.
+
+  @mipmap/ic_launcher resolves to mipmap-anydpi-v26/ic_launcher.xml (an <adaptive-icon>)
+  on API 26 and above. A <bitmap> element can only inflate an actual bitmap, so pointing
+  one at an adaptive icon throws:
+
+      Resources$NotFoundException: Drawable ...:drawable/splash with resource ID 0x...
+
+  at Activity.onCreate, which kills the launch activity before it can draw — the app shows
+  a black screen and the task stays visible=false. <item android:drawable> accepts any
+  drawable type, so it works for both the adaptive icon and the legacy PNGs.
+
+  The background is an inline <shape> so this file has no dependency on a @color resource.
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
@@ -12,10 +22,7 @@
             <solid android:color="#FF12121A" />
         </shape>
     </item>
-    <item>
-        <bitmap
-                android:src="@mipmap/ic_launcher"
-                android:gravity="center"
-                android:filter="true" />
-    </item>
+    <item
+            android:drawable="@mipmap/ic_launcher"
+            android:gravity="center" />
 </layer-list>
