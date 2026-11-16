@@ -46,6 +46,33 @@ for f in glob.glob(os.path.join(RES, "values*/*.xml")):
         if tag in res_names and name:
             res_names[tag].add(name)
 
+# Duplicate detection, scoped per configuration directory.
+#
+# values/ and values-night/ are different configurations and are SUPPOSED to declare the
+# same names; that is how a night override works. Two files inside the SAME configuration
+# declaring the same name is a build failure, and aapt2 compile does not catch it because
+# it compiles each file independently. Only the resource merger does, which means the
+# failure surfaces 20 minutes into CI. This is the cheap local equivalent.
+seen_names = {}
+for f in glob.glob(os.path.join(RES, "values*/*.xml")):
+    qual = os.path.basename(os.path.dirname(f))
+    try:
+        root = ET.parse(f).getroot()
+    except ET.ParseError:
+        continue
+    for child in root:
+        name = child.get("name")
+        if not name:
+            continue
+        key = (qual, child.tag, name)
+        seen_names.setdefault(key, []).append(os.path.basename(f))
+
+for (qual, tag, name), files in sorted(seen_names.items()):
+    if len(files) > 1:
+        failures.append(
+            f"duplicate {tag}/{name} in {qual}: {', '.join(sorted(set(files)))}"
+        )
+
 for f in glob.glob(os.path.join(RES, "drawable*/*")):
     res_names["drawable"].add(os.path.basename(f).split(".")[0])
 
