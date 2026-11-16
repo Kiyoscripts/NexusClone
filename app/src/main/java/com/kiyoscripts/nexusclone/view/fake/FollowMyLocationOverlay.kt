@@ -18,6 +18,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import top.niunaijun.blackbox.entity.location.BLocation
+import com.kiyoscripts.nexusclone.R
 import com.kiyoscripts.nexusclone.databinding.ActivityOsmdroidBinding
 import com.kiyoscripts.nexusclone.util.inflate
 import com.kiyoscripts.nexusclone.util.toast

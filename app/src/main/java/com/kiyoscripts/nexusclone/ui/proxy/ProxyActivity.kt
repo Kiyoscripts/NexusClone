@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.kiyoscripts.nexusclone.R
 import com.kiyoscripts.nexusclone.core.instance.InstanceManager
 import com.kiyoscripts.nexusclone.core.net.ProxyProfile
 import com.kiyoscripts.nexusclone.core.net.ProxyStore
