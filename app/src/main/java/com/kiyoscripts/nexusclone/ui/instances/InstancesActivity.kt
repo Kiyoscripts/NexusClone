@@ -3,8 +3,10 @@ package com.kiyoscripts.nexusclone.ui.instances
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.Log
+import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -22,8 +24,13 @@ import com.kiyoscripts.nexusclone.databinding.ActivityInstancesBinding
 import com.kiyoscripts.nexusclone.databinding.ItemInstanceBinding
 import com.kiyoscripts.nexusclone.ui.instance.InstanceDetailActivity
 import com.kiyoscripts.nexusclone.util.toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -46,6 +53,22 @@ class InstancesActivity : AppCompatActivity() {
     private lateinit var manager: InstanceManager
     private lateinit var previews: PreviewCache
     private val adapter = InstanceAdapter()
+
+    /**
+     * Scope for preview decoding.
+     *
+     * Separate from lifecycleScope so a decode that is already running is not cancelled
+     * mid-flight by a configuration change, and cancelled explicitly in onDestroy.
+     */
+    private val previewScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    /**
+     * Package icons, keyed by package name.
+     *
+     * getApplicationIcon() is a binder round-trip into the host PackageManager. The grid
+     * rebinds cells constantly while scrolling, so resolving it per bind is pure waste.
+     */
+    private val iconCache = LruCache<String, Drawable>(64)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -126,15 +149,66 @@ class InstancesActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        previewScope.cancel()
+        super.onDestroy()
+    }
+
+    /** Resolve a package icon, memoised. Returns null when the package is gone. */
+    private fun iconFor(packageName: String): Drawable? {
+        iconCache.get(packageName)?.let { return it }
+        return try {
+            val d = packageManager.getApplicationIcon(packageName)
+            iconCache.put(packageName, d)
+            d
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private inner class InstanceAdapter :
         RecyclerView.Adapter<InstanceAdapter.VH>() {
 
         private val items = ArrayList<CloneInstance>()
 
+        /**
+         * Replace the list and repaint only what actually changed.
+         *
+         * This used to call notifyDataSetChanged() unconditionally. InstanceManager
+         * republishes its StateFlow on every state transition, every size refresh and every
+         * preview write, so a full rebind was happening several times per second while a
+         * clone was starting. Each rebind re-decoded the preview WebP and re-resolved the
+         * package icon on the main thread, which is exactly the stutter this screen had.
+         *
+         * Diffing on the fields the row actually renders means a state change repaints one
+         * cell instead of the whole grid.
+         */
         fun submit(list: List<CloneInstance>) {
+            val old = ArrayList(items)
             items.clear()
             items.addAll(list)
-            notifyDataSetChanged()
+
+            if (old.size != items.size) {
+                notifyDataSetChanged()
+                return
+            }
+            for (i in items.indices) {
+                val a = old[i]
+                val b = items[i]
+                if (a.id != b.id) {
+                    // Order changed: a positional diff would be wrong, so fall back.
+                    notifyDataSetChanged()
+                    return
+                }
+                if (a.state != b.state ||
+                    a.label != b.label ||
+                    a.dataSizeBytes != b.dataSizeBytes ||
+                    a.quotaBytes != b.quotaBytes ||
+                    a.previewUpdatedAt != b.previewUpdatedAt
+                ) {
+                    notifyItemChanged(i)
+                }
+            }
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -158,24 +232,35 @@ class InstancesActivity : AppCompatActivity() {
                 b.subtitle.text = "${inst.packageName} · u${inst.userId}"
                 b.stateBadge.text = stateLabel(inst.state)
 
-                val icon = try {
-                    packageManager.getApplicationIcon(inst.packageName)
-                } catch (e: Exception) {
-                    null
-                }
-                b.icon.setImageDrawable(icon)
-
+                // Decode the preview off the main thread. BitmapFactory.decodeFile on a
+                // 180x320 WebP is not free, and this runs for every visible cell on every
+                // rebind; doing it inline is what made the grid hitch while scrolling.
                 val file: File? = previews.existingFile(inst)
+                val stamp = inst.previewUpdatedAt
                 if (file != null) {
-                    val bmp = BitmapFactory.decodeFile(file.absolutePath)
-                    if (bmp != null) {
-                        b.preview.setImageBitmap(bmp)
-                    } else {
-                        b.preview.setImageDrawable(icon)
+                    val tag = file.absolutePath + "@" + stamp
+                    if (b.preview.tag != tag) {
+                        b.preview.tag = tag
+                        b.preview.setImageDrawable(null)
+                        previewScope.launch {
+                            val bmp = withContext(Dispatchers.IO) {
+                                BitmapFactory.decodeFile(file.absolutePath)
+                            }
+                            // The holder may have been recycled onto another instance while
+                            // we were decoding; only apply if the tag still matches.
+                            if (bmp != null && b.preview.tag == tag) {
+                                b.preview.setImageBitmap(bmp)
+                            }
+                        }
                     }
                 } else {
-                    b.preview.setImageDrawable(icon)
+                    b.preview.tag = null
+                    b.preview.setImageDrawable(null)
                 }
+
+                // The package icon is resolved through the host PackageManager, which is a
+                // binder round-trip. Cache it per package so scrolling does not re-resolve.
+                b.icon.setImageDrawable(iconFor(inst.packageName))
 
                 if (inst.quotaBytes > 0) {
                     b.quotaBar.visibility = View.VISIBLE

@@ -18,21 +18,46 @@ class GmsViewModel(private val mRepo: GmsRepository) : BaseViewModel() {
 
     val mUpdateInstalledLiveData = MutableLiveData<GmsInstallBean>()
 
+    /**
+     * True while an install or uninstall is in flight.
+     *
+     * GMS install is thirteen sequential package installs inside the engine, so it can take
+     * seconds. The screen needs to know that a second tap must not start a second install
+     * on the same user, and the row needs to show that it is working rather than looking
+     * frozen.
+     */
+    val mBusyLiveData = MutableLiveData<Boolean>()
+
     fun getInstalledUser() {
-        launchOnUI {
+        // launchOnIO, not launchOnUI: the latter is a deprecated alias that also runs on
+        // Dispatchers.IO, but the name reads as "main thread" and this body does two binder
+        // round-trips per user. Say what it does.
+        launchOnIO {
             mRepo.getGmsInstalledList(mInstalledLiveData)
         }
     }
 
     fun installGms(userID: Int) {
-        launchOnUI {
-            mRepo.installGms(userID,mUpdateInstalledLiveData)
+        if (mBusyLiveData.value == true) return
+        mBusyLiveData.postValue(true)
+        launchOnIO {
+            try {
+                mRepo.installGms(userID, mUpdateInstalledLiveData)
+            } finally {
+                mBusyLiveData.postValue(false)
+            }
         }
     }
 
     fun uninstallGms(userID: Int) {
-        launchOnUI {
-            mRepo.uninstallGms(userID,mUpdateInstalledLiveData)
+        if (mBusyLiveData.value == true) return
+        mBusyLiveData.postValue(true)
+        launchOnIO {
+            try {
+                mRepo.uninstallGms(userID, mUpdateInstalledLiveData)
+            } finally {
+                mBusyLiveData.postValue(false)
+            }
         }
     }
 }

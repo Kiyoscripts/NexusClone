@@ -224,6 +224,66 @@ class MacroRecorder {
             events = events.toList(),
             loopCount = loopCount
         )
+
+    /**
+     * Feed a whole MotionEvent, translating to view-local coordinates.
+     *
+     * This is the entry point the guest window uses. [onTouch] takes raw coordinates and
+     * existed with no caller, which is why every recording came back empty: nothing ever
+     * pushed an event into the recorder. The offset subtraction is what makes the recorded
+     * coordinates replayable against the same view later.
+     */
+    fun onMotionEvent(event: android.view.MotionEvent, view: android.view.View) {
+        if (!recording) return
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
+        onTouch(event.actionMasked, event.rawX - loc[0], event.rawY - loc[1])
+    }
+
+    companion object {
+        /**
+         * The recorder currently attached to a guest window, if any.
+         *
+         * A macro is recorded against a guest app, but the recording UI lives in the host.
+         * The two are different Activities, so the recorder is published here and the
+         * guest's touch hook feeds it. Only one recording can be active at a time, which
+         * matches the UI: one Record button.
+         */
+        @Volatile
+        private var active: MacroRecorder? = null
+
+        /**
+         * The guest decor view currently receiving input, if a guest is in the foreground.
+         *
+         * Set by the container's activity lifecycle hook. Replay needs a real view to
+         * dispatch into, and the host screen has no handle on the guest's hierarchy, so this
+         * is the only honest source for a replay target.
+         */
+        @Volatile
+        private var guestView: android.view.View? = null
+
+        fun attach(recorder: MacroRecorder) {
+            active = recorder
+        }
+
+        fun detach(recorder: MacroRecorder) {
+            if (active === recorder) active = null
+        }
+
+        /** Publish the guest decor view so replay has a target. */
+        fun attachGuestView(view: android.view.View?) {
+            guestView = view
+        }
+
+        fun currentGuestView(): android.view.View? = guestView
+
+        /** Called from the guest window's touch dispatch. No-op when nothing is recording. */
+        fun feed(event: android.view.MotionEvent, view: android.view.View) {
+            active?.onMotionEvent(event, view)
+        }
+
+        fun isActive(): Boolean = active?.isRecording == true
+    }
 }
 
 /**

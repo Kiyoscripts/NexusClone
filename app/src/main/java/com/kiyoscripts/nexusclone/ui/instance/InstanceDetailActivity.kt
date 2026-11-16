@@ -111,7 +111,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         binding.btnLaunch.setOnClickListener {
             lifecycleScope.launch {
                 manager.launch(instanceId)
-                    .onFailure { toast("launch failed: ${it.message}") }
+                    .onFailure { toast(getString(R.string.launch_failed, it.message ?: "unknown")) }
                 reload()
             }
         }
@@ -166,7 +166,7 @@ class InstanceDetailActivity : AppCompatActivity() {
             val inst = current ?: return@setOnClickListener
             val files = snapshots.list()
             if (files.isEmpty()) {
-                toast("no snapshots")
+                toast(getString(R.string.no_snapshots))
                 return@setOnClickListener
             }
             val names = files.map { it.name }.toTypedArray()
@@ -223,7 +223,7 @@ class InstanceDetailActivity : AppCompatActivity() {
                 try {
                     startActivity(floatingWindow.permissionIntent())
                 } catch (e: Exception) {
-                    toast("cannot open overlay settings")
+                    toast(getString(R.string.overlay_settings_unavailable))
                 }
                 return@setOnClickListener
             }

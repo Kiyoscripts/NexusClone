@@ -88,11 +88,11 @@ class ProxyActivity : AppCompatActivity() {
         val port = portText.toIntOrNull() ?: 0
 
         if (host.isBlank()) {
-            toast("Host is required")
+            toast(getString(R.string.proxy_host_required))
             return
         }
         if (port !in 1..65535) {
-            toast("Port must be 1..65535")
+            toast(getString(R.string.proxy_port_invalid))
             return
         }
 
@@ -127,7 +127,7 @@ class ProxyActivity : AppCompatActivity() {
 
         selectedId = savedId
         reload()
-        toast("Saved")
+        toast(getString(R.string.proxy_saved))
     }
 
     private fun deleteSelected() {

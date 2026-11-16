@@ -25,6 +25,11 @@
             app:showAsAction="never" />
 
     <item
+            android:id="@+id/main_gms"
+            android:title="@string/gms_manager"
+            app:showAsAction="never" />
+
+    <item
             android:id="@+id/main_setting"
             android:title="@string/setting"
             app:showAsAction="never" />

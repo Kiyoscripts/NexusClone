@@ -30,13 +30,21 @@ class GmsManagerActivity : LoadingActivity() {
 
     private val viewBinding: ActivityGmsBinding by inflate()
 
+    /**
+     * True while an install/uninstall is running.
+     *
+     * GMS install is thirteen sequential package installs inside the engine. Without this
+     * guard a second tap on another row starts a second install concurrently, and the two
+     * fight over the engine's install lock while the UI shows one spinner for both.
+     */
+    private var busy = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(viewBinding.root)
         initToolbar(viewBinding.toolbarLayout.toolbar, R.string.gms_manager, true)
-        initViewModel()
-
         initRecyclerView()
+        initViewModel()
     }
 
     private fun initViewModel() {
@@ -46,6 +54,14 @@ class GmsManagerActivity : LoadingActivity() {
         viewModel.mInstalledLiveData.observe(this) {
             hideLoading()
             mAdapter.setItems(it)
+        }
+
+        viewModel.mBusyLiveData.observe(this) { isBusy ->
+            busy = isBusy
+            // The spinner is the only progress signal the engine can give us: installGApps()
+            // reports once, at the end. An indeterminate spinner is honest; a fake percentage
+            // would not be.
+            if (isBusy) showLoading() else hideLoading()
         }
 
         viewModel.mUpdateInstalledLiveData.observe(this) { result ->
@@ -60,7 +76,7 @@ class GmsManagerActivity : LoadingActivity() {
                     if (result.success) {
                         bean.isInstalledGms = !bean.isInstalledGms
                     }
-                    mAdapter.replaceAt( index,bean)
+                    mAdapter.replaceAt(index, bean)
                     break
                 }
             }
@@ -84,6 +100,14 @@ class GmsManagerActivity : LoadingActivity() {
     private fun initRecyclerView() {
         mAdapter = RVAdapter<GmsBean>(this, GmsAdapter()).bind(viewBinding.recyclerView)
             .setItemClickListener { view, item, _ ->
+                // Ignore taps while an install is already running: the engine serialises
+                // installs behind one lock, so a queued second install would just make the
+                // spinner lie about what is happening.
+                if (busy) {
+                    val checkbox = view.findViewById<Switch>(R.id.checkbox)
+                    checkbox.isChecked = item.isInstalledGms
+                    return@setItemClickListener
+                }
                 val checkbox = view.findViewById<Switch>(R.id.checkbox)
                 if (item.isInstalledGms) {
                     uninstallGms(item.userID, checkbox)
@@ -92,41 +116,39 @@ class GmsManagerActivity : LoadingActivity() {
                 }
             }
         viewBinding.recyclerView.layoutManager = LinearLayoutManager(this)
-
     }
 
-    private fun installGms(userID: Int, checkbox: Switch){
+    private fun installGms(userID: Int, checkbox: Switch) {
         MaterialDialog(this).show {
             title(R.string.enable_gms)
             message(R.string.enable_gms_hint)
-            positiveButton(R.string.done){
+            positiveButton(R.string.done) {
                 showLoading()
                 viewModel.installGms(userID)
             }
-            negativeButton(R.string.cancel){
+            negativeButton(R.string.cancel) {
                 checkbox.isChecked = !checkbox.isChecked
             }
         }
     }
 
-    private fun uninstallGms(userID: Int, checkbox: Switch){
+    private fun uninstallGms(userID: Int, checkbox: Switch) {
         MaterialDialog(this).show {
             title(R.string.disable_gms)
             message(R.string.disable_gms_hint)
-            positiveButton(R.string.done){
+            positiveButton(R.string.done) {
                 showLoading()
                 viewModel.uninstallGms(userID)
             }
-            negativeButton(R.string.cancel){
+            negativeButton(R.string.cancel) {
                 checkbox.isChecked = !checkbox.isChecked
             }
         }
     }
 
-
-    companion object{
-        fun start(context: Context){
-            val intent = Intent(context,GmsManagerActivity::class.java)
+    companion object {
+        fun start(context: Context) {
+            val intent = Intent(context, GmsManagerActivity::class.java)
             context.startActivity(intent)
         }
     }

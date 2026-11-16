@@ -94,7 +94,7 @@ class IdentityActivity : AppCompatActivity() {
         val newId = store.insert(id)
         selectedId = newId
         reload()
-        toast("Generated")
+        toast(getString(R.string.identity_generated))
     }
 
     private fun applySelected() {
@@ -103,7 +103,7 @@ class IdentityActivity : AppCompatActivity() {
             manager.setIdentity(instanceId, id)
             refreshSummary()
         }
-        toast("Applied")
+        toast(getString(R.string.identity_applied))
     }
 
     private fun clearBinding() {
@@ -111,7 +111,7 @@ class IdentityActivity : AppCompatActivity() {
             manager.setIdentity(instanceId, null)
             refreshSummary()
         }
-        toast("Cleared")
+        toast(getString(R.string.identity_cleared))
     }
 
     private fun select(identity: DeviceIdentity) {

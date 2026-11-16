@@ -59,15 +59,49 @@ class KeepAliveController private constructor(private val context: Context) {
     // Only applyLevel() actually needs the manager, so resolve it on first use.
     private val manager by lazy { InstanceManager.get(context) }
 
-    /** 0 = nothing, 1 = foreground service only, 2 = service + battery exemption. */
+    /**
+     * Report how many resurrection layers are actually armed, 0..5.
+     *
+     * The subsystem has five layers and the old 0/1/2 scale could not describe three of
+     * them, so Diagnostics reported "strength 2" on a device where the alarm and the job had
+     * both been dropped by the OS. Each layer is probed independently:
+     *
+     *   1. foreground service running
+     *   2. battery optimisation exemption granted
+     *   3. alarm pulse scheduled
+     *   4. expedited job scheduled
+     *   5. preference enabled (the gate every other layer sits behind)
+     *
+     * Layer 5 is checked first because with it off nothing else can be armed, and reporting
+     * "0 of 5" is the honest answer in that case.
+     */
     fun strength(): Int {
+        if (!KeepAlivePrefs.isEnabled(context)) return 0
         var level = 0
-        if (isServiceRunning()) level = 1
-        if (level == 1 && isIgnoringBatteryOptimizations()) level = 2
+        if (isServiceRunning()) level++
+        if (isIgnoringBatteryOptimizations()) level++
+        if (isPulseScheduled()) level++
+        if (isJobScheduled()) level++
+        level++ // the preference gate itself
         return level
     }
 
+    /** Total number of layers [strength] can report. */
+    fun maxStrength(): Int = 5
+
     fun isServiceRunning(): Boolean = serviceStarted
+
+    /** True when the alarm pulse is currently registered. */
+    fun isPulseScheduled(): Boolean = pulseScheduled
+
+    /** True when the expedited job is currently registered. */
+    fun isJobScheduled(): Boolean = jobScheduled
+
+    @Volatile
+    private var pulseScheduled = false
+
+    @Volatile
+    private var jobScheduled = false
 
     @Volatile
     private var serviceStarted = false
@@ -258,15 +292,19 @@ class KeepAliveController private constructor(private val context: Context) {
             } else {
                 am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi)
             }
+            pulseScheduled = true
         } catch (e: SecurityException) {
             // The capability can still be revoked between the check above and the call.
             Log.w(TAG, "exact alarm denied, using inexact: ${e.message}")
             try {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                pulseScheduled = true
             } catch (e2: Exception) {
+                pulseScheduled = false
                 Log.w(TAG, "inexact alarm also failed: ${e2.message}")
             }
         } catch (e: Exception) {
+            pulseScheduled = false
             Log.w(TAG, "schedulePulse failed: ${e.message}")
         }
     }
@@ -315,8 +353,13 @@ class KeepAliveController private constructor(private val context: Context) {
         }
 
         try {
-            js.schedule(builder.build())
+            val result = js.schedule(builder.build())
+            jobScheduled = result == JobScheduler.RESULT_SUCCESS
+            if (!jobScheduled) {
+                Log.w(TAG, "job schedule rejected with result=$result")
+            }
         } catch (e: Exception) {
+            jobScheduled = false
             Log.w(TAG, "job schedule failed: ${e.message}")
         }
     }

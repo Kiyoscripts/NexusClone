@@ -437,6 +437,10 @@ class MainActivity : LoadingActivity() {
                     com.kiyoscripts.nexusclone.ui.diag.DiagnosticsActivity.start(this)
                 }
 
+                R.id.main_gms -> {
+                    com.kiyoscripts.nexusclone.view.gms.GmsManagerActivity.start(this)
+                }
+
                 R.id.main_setting -> {
                     SettingActivity.start(this)
                 }

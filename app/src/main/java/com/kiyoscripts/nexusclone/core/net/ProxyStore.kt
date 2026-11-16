@@ -163,5 +163,37 @@ class FixedProxySelector(
             if (existing is FixedProxySelector) return existing
             return FixedProxySelector(proxy, existing)
         }
+
+        /**
+         * Install the JVM-wide default selector for a guest process.
+         *
+         * This is the seam that was missing. [wrap] existed and was correct, but nothing
+         * ever called it, so a proxy bound to a clone was stored and then ignored: the
+         * clone's traffic went out direct.
+         *
+         * Setting ProxySelector.setDefault() covers HttpURLConnection and anything else
+         * that consults the default selector. OkHttp builds its own selector from
+         * ProxySelector.getDefault() at client construction, so a client created after this
+         * call picks it up; a client already built keeps the old one, which is why this runs
+         * during guest process init rather than lazily.
+         *
+         * Idempotent: wrapping an already-wrapped selector returns the same instance, so a
+         * guest that re-enters init does not stack selectors.
+         *
+         * @return true when a proxy is now installed.
+         */
+        fun installDefault(proxy: Proxy?): Boolean {
+            if (proxy == null) return false
+            return try {
+                val current = ProxySelector.getDefault()
+                val wrapped = wrap(current, proxy)
+                if (wrapped !== current) {
+                    ProxySelector.setDefault(wrapped)
+                }
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
     }
 }

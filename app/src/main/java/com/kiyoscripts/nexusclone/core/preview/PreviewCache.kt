@@ -157,6 +157,37 @@ class PreviewCache(private val context: Context) {
     }
 
     /**
+     * Capture a thumbnail for a guest activity that is going away.
+     *
+     * This is the seam that was missing: [captureNow] existed but nothing ever called it, so
+     * no thumbnail was ever written and every grid cell fell back to the package icon. The
+     * guest's own Activity is the only place a live Window exists, and the moment it pauses
+     * is the last moment its surface is still valid.
+     *
+     * Called from the container's activity lifecycle callback. Safe to call for a package
+     * that has no instance row (a guest launched outside the instance grid): it simply does
+     * nothing.
+     */
+    fun captureGuest(
+        activity: android.app.Activity,
+        packageName: String,
+        userId: Int,
+        onDone: (Boolean) -> Unit = {}
+    ) {
+        val inst = manager.byKey(userId, packageName)
+        if (inst == null) {
+            onDone(false)
+            return
+        }
+        try {
+            captureNow(inst, activity.window, force = true, onDone = onDone)
+        } catch (e: Exception) {
+            Log.w(TAG, "captureGuest(${inst.key}) failed: ${e.message}")
+            onDone(false)
+        }
+    }
+
+    /**
      * Start the 5 s refresh loop.
      *
      * [provider] supplies the (instance, window) pairs to capture on each tick. The

@@ -2,8 +2,10 @@ package com.kiyoscripts.nexusclone.data
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.util.Log
+import android.util.LruCache
 import androidx.lifecycle.MutableLiveData
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.utils.AbiUtils
@@ -28,7 +30,30 @@ import android.webkit.URLUtil
 class AppsRepository {
     val TAG: String = "AppsRepository"
     private var mInstalledList = mutableListOf<AppInfo>()
-    
+
+    companion object {
+        /**
+         * Decoded icons, keyed by package name.
+         *
+         * Loading an icon is not free: getApplicationIcon() resolves the package's resources
+         * through the host PackageManager, which is a binder round-trip, and then decodes the
+         * bitmap. The app grid rebinds on every tab switch, every page swipe and every scroll
+         * back into view, so without a cache the same handful of icons is re-resolved and
+         * re-decoded continuously. That is a large part of why the grid felt heavy once GMS
+         * added thirteen more packages to every user.
+         *
+         * A 96x96 ARGB_8888 icon is ~36 KB, so 128 entries is ~4.6 MB worst case. The bound is
+         * deliberately modest: this is a cache, not a store, and the host process is the one
+         * that has to stay responsive.
+         */
+        private val iconCache = LruCache<String, Drawable>(128)
+
+        /** Drop every cached icon. Called when the installed set changes. */
+        fun clearIconCache() {
+            iconCache.evictAll()
+        }
+    }
+
     /**
      * Safely load app label with fallback to package name
      */
@@ -44,26 +69,34 @@ class AppsRepository {
     /**
      * Safely load app icon with fallback to null
      */
-    private fun safeLoadAppIcon(applicationInfo: ApplicationInfo): android.graphics.drawable.Drawable? {
+    private fun safeLoadAppIcon(applicationInfo: ApplicationInfo): Drawable? {
+        val pkg = applicationInfo.packageName ?: return null
+
+        // Cache hit: no resource resolution, no decode, no binder call.
+        iconCache.get(pkg)?.let { return it }
+
         return try {
             // Check if we should skip icon loading to save memory
             if (MemoryManager.shouldSkipIconLoading()) {
-                Log.w(TAG, "Memory usage high (${MemoryManager.getMemoryUsagePercentage()}%), skipping icon for ${applicationInfo.packageName}")
+                Log.w(TAG, "Memory usage high (${MemoryManager.getMemoryUsagePercentage()}%), skipping icon for $pkg")
                 return null
             }
-            
+
             val icon = BlackBoxCore.getPackageManager().getApplicationIcon(applicationInfo)
-            
+
             // Optimize icon for memory efficiency
-            if (icon is android.graphics.drawable.BitmapDrawable) {
+            val optimized: Drawable = if (icon is android.graphics.drawable.BitmapDrawable) {
                 val bitmap = icon.bitmap
                 // If icon is too large, scale it down to save memory
                 if (bitmap.width > 96 || bitmap.height > 96) {
                     try {
                         val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, 96, 96, true)
-                        android.graphics.drawable.BitmapDrawable(BlackBoxCore.getPackageManager().getResourcesForApplication(applicationInfo.packageName), scaledBitmap)
+                        android.graphics.drawable.BitmapDrawable(
+                            BlackBoxCore.getPackageManager().getResourcesForApplication(pkg),
+                            scaledBitmap
+                        )
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to scale icon for ${applicationInfo.packageName}: ${e.message}")
+                        Log.w(TAG, "Failed to scale icon for $pkg: ${e.message}")
                         icon
                     }
                 } else {
@@ -72,9 +105,11 @@ class AppsRepository {
             } else {
                 icon
             }
-            
+
+            iconCache.put(pkg, optimized)
+            optimized
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to load icon for ${applicationInfo.packageName}: ${e.message}")
+            Log.w(TAG, "Failed to load icon for $pkg: ${e.message}")
             null // Fallback to null icon
         }
     }
@@ -131,14 +166,27 @@ class AppsRepository {
             loadingLiveData.postValue(true)
             synchronized(mInstalledList) {
                 val blackBoxCore = BlackBoxCore.get()
-                Log.d(TAG, mInstalledList.joinToString(","))
+
+                // Resolve the user's installed set once instead of asking the engine
+                // "is this one installed?" per row. Each isInstalled() is a synchronous
+                // binder transaction into :black, so the old shape cost one round-trip per
+                // app in the picker. With GMS enabled that is thirteen extra packages per
+                // user, i.e. thirteen extra round-trips every time the picker opens.
+                val installedHere = try {
+                    blackBoxCore.getInstalledApplications(0, userID)
+                        .mapTo(HashSet()) { it.packageName }
+                } catch (e: Exception) {
+                    Log.w(TAG, "could not list installed apps for user $userID: ${e.message}")
+                    emptySet()
+                }
+
                 val newInstalledList = mInstalledList.map {
                     InstalledAppBean(
                         it.name,
                         it.icon, // Remove the !! operator to allow null icons
                         it.packageName,
                         it.sourceDir,
-                        blackBoxCore.isInstalled(it.packageName, userID)
+                        it.packageName in installedHere
                     )
                 }
                 appsLiveData.postValue(newInstalledList)
@@ -158,7 +206,8 @@ class AppsRepository {
         try {
             loadingLiveData.postValue(true)
             synchronized(mInstalledList) {
-                val blackBoxCore = BlackBoxCore.get()
+                // Same hoist as getInstalledAppList: one lookup, not one per row.
+                val xpModules = xposedModulePackages()
                 val moduleList = mInstalledList.filter {
                     it.isXpModule
                 }.map {
@@ -167,7 +216,7 @@ class AppsRepository {
                         it.icon, // Remove the !! operator to allow null icons
                         it.packageName,
                         it.sourceDir,
-                        blackBoxCore.isInstalledXposedModule(it.packageName)
+                        it.packageName in xpModules
                     )
                 }
                 appsLiveData.postValue(moduleList)
@@ -239,6 +288,10 @@ class AppsRepository {
             }
 
             val appInfoList = mutableListOf<AppInfo>()
+
+            // One binder round-trip for the whole list, not one per row. See
+            // xposedModulePackages() for why this matters once GMS is installed.
+            val xpModules = xposedModulePackages()
             
             // Sort the application list if sort data exists
             val sortedApplicationList = if (!sortList.isNullOrEmpty()) {
@@ -280,7 +333,7 @@ class AppsRepository {
                         safeLoadAppIcon(applicationInfo), // Remove the !! operator to allow null icons
                         applicationInfo.packageName,
                         applicationInfo.sourceDir ?: "",
-                        isInstalledXpModule(applicationInfo.packageName)
+                        applicationInfo.packageName in xpModules
                     )
 
                     appInfoList.add(info)
@@ -333,6 +386,27 @@ class AppsRepository {
                 Log.e(TAG, "getVmInstallList: Error posting empty list: ${e2.message}")
             }
         }
+    }
+
+    /**
+     * Resolve the set of installed Xposed module package names once.
+     *
+     * This used to be called per app, from inside the row loop, and each call is a
+     * synchronous binder transaction into the :black process
+     * (BXposedManager.getInstalledModules() -> IBXposedManagerService). With a bare user that
+     * is a handful of rows and the cost is invisible; once GMS is enabled the engine installs
+     * thirteen more packages into the user, so the grid pays thirteen-plus extra binder
+     * round-trips on every single refresh, on top of the icon resolution. That is the lag.
+     *
+     * The module set is global (it lives in BUserHandle.USER_XPOSED, not in the caller's
+     * user), so one lookup answers every row. Returns an empty set on failure, which makes
+     * every row report "not a module" rather than throwing out of the loop.
+     */
+    private fun xposedModulePackages(): Set<String> = try {
+        BlackBoxCore.get().installedXPModules.mapTo(HashSet()) { it.packageName }
+    } catch (e: Exception) {
+        Log.w(TAG, "could not read Xposed module list: ${e.message}")
+        emptySet()
     }
 
     private fun isInstalledXpModule(packageName: String): Boolean {

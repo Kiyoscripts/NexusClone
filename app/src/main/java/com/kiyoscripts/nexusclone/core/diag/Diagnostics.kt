@@ -56,6 +56,10 @@ class Diagnostics(private val context: Context) {
         add(storage())
         add(identityFactory())
         add(instanceHealth())
+        add(gmsStatus())
+        add(proxyStatus())
+        add(processList())
+        add(hookStatus())
     }
 
     private fun engineServices(): Check {
@@ -119,15 +123,17 @@ class Diagnostics(private val context: Context) {
     }
 
     private fun keepAlive(): Check {
-        val level = KeepAliveController.get(context).strength()
+        val controller = KeepAliveController.get(context)
+        val level = controller.strength()
+        val max = controller.maxStrength()
         return Check(
             "keepalive",
             "Keep-alive strength",
-            level >= 1,
-            when (level) {
-                2 -> "Foreground service running, battery exemption granted"
-                1 -> "Foreground service running, no battery exemption"
-                else -> "Foreground service not running"
+            level >= 3,
+            when {
+                level == 0 -> "Disabled in Settings; no resurrection layer is armed"
+                level >= max -> "$level of $max layers armed (service, exemption, alarm, job)"
+                else -> "$level of $max layers armed; clones may be killed sooner"
             }
         )
     }
@@ -181,6 +187,105 @@ class Diagnostics(private val context: Context) {
             if (dead > 0) append(", $dead dead")
         }
         return Check("instances", "Instances", ok, detail)
+    }
+
+    /**
+     * Whether GMS is installed in any virtual user.
+     *
+     * Worth surfacing because enabling GMS is the single largest change to a user's package
+     * set (thirteen packages) and it is the usual explanation for "the app list got slow".
+     * Informational: not having GMS is not a failure.
+     */
+    private fun gmsStatus(): Check {
+        val users = try {
+            BlackBoxCore.get().users
+        } catch (e: Exception) {
+            return Check("gms", "Google services", false, "user list unreadable: ${e.message}")
+        }
+        if (users.isEmpty()) {
+            return Check("gms", "Google services", true, "No virtual users yet")
+        }
+        val withGms = users.count {
+            try {
+                BlackBoxCore.get().isInstallGms(it.id)
+            } catch (e: Exception) {
+                false
+            }
+        }
+        return Check(
+            "gms",
+            "Google services",
+            true,
+            if (withGms == 0) "Not installed in any of ${users.size} user(s)"
+            else "Installed in $withGms of ${users.size} user(s)"
+        )
+    }
+
+    /** How many clones have a proxy bound, and whether the selector is installed. */
+    private fun proxyStatus(): Check {
+        val all = manager.snapshot()
+        val bound = all.count { it.proxyId != null }
+        val selector = try {
+            java.net.ProxySelector.getDefault()
+        } catch (e: Exception) {
+            null
+        }
+        val installed = selector is com.kiyoscripts.nexusclone.core.net.FixedProxySelector
+        return Check(
+            "proxy",
+            "Proxy routing",
+            true,
+            when {
+                bound == 0 -> "No clone has a proxy bound"
+                installed -> "$bound clone(s) bound, selector active in this process"
+                else -> "$bound clone(s) bound; selector installs when a guest starts"
+            }
+        )
+    }
+
+    /**
+     * Guest processes currently alive.
+     *
+     * Reads the host's own process list rather than the engine's, because the engine does not
+     * expose one. A guest runs in a process named after the host package with a ":pN" suffix,
+     * so counting those is an accurate view of what is actually running.
+     */
+    private fun processList(): Check {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val mine = context.packageName
+        val guests = try {
+            am.runningAppProcesses
+                ?.filter { it.processName.startsWith("$mine:") }
+                ?.map { it.processName.removePrefix("$mine:") }
+                ?: emptyList()
+        } catch (e: Exception) {
+            return Check("processes", "Guest processes", false, "unreadable: ${e.message}")
+        }
+        return Check(
+            "processes",
+            "Guest processes",
+            true,
+            if (guests.isEmpty()) "None running" else guests.joinToString(", ")
+        )
+    }
+
+    /**
+     * Whether the Java hooking stack is usable on this device.
+     *
+     * Epic's Offset table only accepts SDK 29 and 30 and throws otherwise, so on any other
+     * Android version arbitrary Java hooking is unavailable. Reporting that plainly is more
+     * useful than letting a user wonder why a module does nothing.
+     */
+    private fun hookStatus(): Check {
+        val sdk = Build.VERSION.SDK_INT
+        val supported = sdk == 29 || sdk == 30
+        return Check(
+            "hooks",
+            "Java hooking",
+            true,
+            if (supported) "Epic available (SDK $sdk)"
+            else "Epic unavailable on SDK $sdk; only SDK 29-30 is supported"
+        )
     }
 
     /** Per-instance detail block for the diagnostics screen. */

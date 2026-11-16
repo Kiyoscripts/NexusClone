@@ -161,10 +161,10 @@ class FollowMyLocationOverlay : AppCompatActivity() {
             // which is all this screen needs. Only the "centre on my position" convenience
             // is gone, so do not finish() the Activity.
             Log.w(TAG, "no location permission granted, continuing without it")
-            this.toast("Location permission denied - pick the point on the map")
+            this.toast(getString(R.string.location_permission_denied))
             return
         }
-        this.toast("Location permission is needed to centre the map on your position")
+        this.toast(getString(R.string.location_permission_needed))
         ActivityCompat.requestPermissions(
             this,
             retry.toTypedArray(),

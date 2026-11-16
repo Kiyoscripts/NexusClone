@@ -2,6 +2,7 @@ package com.kiyoscripts.nexusclone.core.instance
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,13 +77,121 @@ class InstanceManager private constructor(private val context: Context) {
     }
 
     /**
-     * Create a clone of [packageName].
+     * Create a clone from a package name or an apk source.
+     *
+     * [packageName] is either an installed package name (the normal path, from the app
+     * picker) or a content/file URI when the user picked an apk from storage. The two are not
+     * interchangeable: installPackageAsUser(String) resolves the string as a package name and
+     * throws NameNotFoundException for a URI, which is why picking an apk used to fail with a
+     * confusing "clone failed" toast.
+     *
+     * A URI is installed into a fresh virtual user first, and the instance row is then built
+     * from the package name the engine reports back.
+     */
+    suspend fun create(
+        packageName: String,
+        label: String? = null,
+        quotaBytes: Long = 0L
+    ): Result<CloneInstance> = withContext(Dispatchers.IO) {
+        if (isApkSource(packageName)) {
+            createFromApkSource(packageName, label, quotaBytes)
+        } else {
+            createFromPackage(packageName, label, quotaBytes)
+        }
+    }
+
+    /** True when [source] is a URI or path rather than a package name. */
+    private fun isApkSource(source: String): Boolean =
+        source.startsWith("content://") ||
+            source.startsWith("file://") ||
+            source.startsWith("/")
+
+    /**
+     * Install an apk from a URI or path into a new virtual user, then register the instance.
+     *
+     * The engine's installPackageAsUser(Uri, int) handles the content:// case itself, so the
+     * URI is passed straight through rather than being copied to a temp file first.
+     */
+    private suspend fun createFromApkSource(
+        source: String,
+        label: String?,
+        quotaBytes: Long
+    ): Result<CloneInstance> = withContext(Dispatchers.IO) {
+        _busy.value = true
+        try {
+            val userId = allocateUserId()
+            try {
+                BlackBoxCore.get().createUser(userId)
+            } catch (e: Exception) {
+                Log.e(TAG, "createUser($userId) failed: ${e.message}", e)
+                return@withContext Result.failure(e)
+            }
+
+            val install = try {
+                if (source.startsWith("content://")) {
+                    BlackBoxCore.get().installPackageAsUser(Uri.parse(source), userId)
+                } else {
+                    val path = if (source.startsWith("file://")) Uri.parse(source).path else source
+                    BlackBoxCore.get().installPackageAsUser(File(path ?: source), userId)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "install from $source into user $userId failed: ${e.message}", e)
+                safeDeleteUser(userId)
+                return@withContext Result.failure(e)
+            }
+
+            if (!install.success) {
+                safeDeleteUser(userId)
+                return@withContext Result.failure(
+                    IllegalStateException(install.msg ?: "install failed")
+                )
+            }
+
+            // The engine reports the package it actually installed; trust that over the
+            // source string, which for a URI is not a package name at all.
+            val installedPkg = install.packageName
+            if (installedPkg.isNullOrBlank()) {
+                safeDeleteUser(userId)
+                return@withContext Result.failure(
+                    IllegalStateException("engine did not report an installed package")
+                )
+            }
+
+            val row = CloneInstance(
+                userId = userId,
+                packageName = installedPkg,
+                label = label ?: loadLabel(installedPkg),
+                state = InstanceState.INSTALLED,
+                quotaBytes = quotaBytes
+            )
+            val id = store.insert(row)
+            if (id == -1L) {
+                safeDeleteUser(userId)
+                return@withContext Result.failure(
+                    IllegalStateException(
+                        "could not persist instance for $installedPkg in user $userId"
+                    )
+                )
+            }
+            val saved = row.copy(id = id)
+            refresh()
+            Result.success(saved)
+        } catch (e: Exception) {
+            Log.e(TAG, "createFromApkSource($source) failed: ${e.message}", e)
+            Result.failure(e)
+        } finally {
+            _busy.value = false
+        }
+    }
+
+    /**
+     * Create a clone of an already-installed [packageName].
      *
      * Steps: allocate a user id, register it with the engine, install the apk into that
      * user, then persist the row. A failure at any step rolls the user back so we never
      * leave an orphaned virtual user with no instance row.
      */
-    suspend fun create(
+    private suspend fun createFromPackage(
         packageName: String,
         label: String? = null,
         quotaBytes: Long = 0L

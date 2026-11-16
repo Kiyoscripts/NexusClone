@@ -131,6 +131,39 @@ class BlackBoxLoader {
                 ) {
                     try {
                         Log.d(TAG, "beforeApplicationOnCreate: pkg $packageName, processName $processName")
+
+                        // Install the clone's proxy before the guest's Application runs.
+                        //
+                        // This is the only point where it takes effect: OkHttp captures
+                        // ProxySelector.getDefault() when a client is constructed, and a
+                        // guest typically builds its clients in Application.onCreate or
+                        // shortly after. Installing later would leave the first (and often
+                        // only) client on the direct path.
+                        //
+                        // A clone with no proxy bound resolves to null and this is a no-op,
+                        // so the common case pays one database read.
+                        if (packageName != null) {
+                            try {
+                                val ctx = application ?: App.getContext()
+                                val inst = com.kiyoscripts.nexusclone.core.instance.InstanceManager
+                                    .get(ctx).byKey(userId, packageName)
+                                val proxyId = inst?.proxyId
+                                if (proxyId != null) {
+                                    val profile = com.kiyoscripts.nexusclone.core.net.ProxyStore(ctx)
+                                        .byId(proxyId)
+                                    if (profile != null && profile.enabled) {
+                                        val ok = com.kiyoscripts.nexusclone.core.net
+                                            .FixedProxySelector.installDefault(profile.toJavaProxy())
+                                        Log.d(
+                                            TAG,
+                                            "proxy ${profile.display} for $packageName/$userId installed=$ok"
+                                        )
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "proxy install failed for $packageName: ${e.message}")
+                            }
+                        }
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in beforeApplicationOnCreate: ${e.message}")
                     }
@@ -154,6 +187,29 @@ class BlackBoxLoader {
                     try {
                         val pkg = activity.packageName ?: return
                         val uid = BActivityThread.getUserId()
+
+                        // Feed the macro recorder from the guest's own touch stream. The
+                        // recorder is a no-op unless a recording is active, so this costs a
+                        // null check per event in the common case.
+                        try {
+                            val decor = activity.window?.decorView
+                            if (decor != null) {
+                                // Publish the view so macro replay has a real target, and
+                                // feed the recorder from the guest's own touch stream. The
+                                // recorder is a no-op unless a recording is active, so this
+                                // costs a null check per event in the common case.
+                                com.kiyoscripts.nexusclone.core.macro.MacroRecorder
+                                    .attachGuestView(decor)
+                                decor.setOnTouchListener { v, ev ->
+                                    com.kiyoscripts.nexusclone.core.macro.MacroRecorder
+                                        .feed(ev, v)
+                                    false
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "macro touch hook failed for $pkg: ${e.message}")
+                        }
+
                         GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                             com.kiyoscripts.nexusclone.core.instance.InstanceManager
                                 .get(activity.applicationContext)
@@ -168,6 +224,20 @@ class BlackBoxLoader {
                     try {
                         val pkg = activity.packageName ?: return
                         val uid = BActivityThread.getUserId()
+
+                        // Capture the thumbnail here, synchronously, before the coroutine
+                        // below yields. This is the last moment the guest's Window still has
+                        // a valid surface: once the pause completes the surface can be
+                        // destroyed and PixelCopy returns ERROR_SOURCE_INVALID. Doing it
+                        // inside the coroutine would race the surface teardown.
+                        try {
+                            com.kiyoscripts.nexusclone.core.preview.PreviewCache(
+                                activity.applicationContext
+                            ).captureGuest(activity, pkg, uid)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "preview capture failed for $pkg: ${e.message}")
+                        }
+
                         GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                             com.kiyoscripts.nexusclone.core.instance.InstanceManager
                                 .get(activity.applicationContext)
