@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Networking strings: proxy editor labels, probe results, and bind failures.
+
+  Kept in its own file so the proxy screen can be translated without touching the
+  main string table, which is already large.
+-->
+<resources>
+
+    <!-- Proxy type segments. One label per segment, one segment per ProxyType. -->
+    <string name="net_socks5">SOCKS5</string>
+    <string name="net_socks4">SOCKS4</string>
+    <string name="net_http">HTTP</string>
+
+    <!-- Bind failure. %1$s is the exception message. -->
+    <string name="net_proxy_save_failed">Could not bind proxy: %1$s</string>
+
+    <!-- Probe results. %1$s is host:port, %2$d is elapsed milliseconds. -->
+    <string name="net_proxy_reachable">%1$s reachable in %2$d ms</string>
+    <string name="net_proxy_unreachable">%1$s did not accept a connection</string>
+
+    <!-- Clear on a profile that other clones still reference. -->
+    <string name="net_proxy_kept_shared">Unbound from this clone. The profile is still used by other clones.</string>
+
+</resources>

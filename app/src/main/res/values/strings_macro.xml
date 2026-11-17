@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Macro screen strings. Prefixed macro_ to stay clear of the shared string table. -->
+    <string name="macro_loop_count_hint">1</string>
+    <string name="macro_loop_count_label">Loop count (1-999)</string>
+    <string name="macro_default_name">macro %1$d</string>
+    <string name="macro_stopped">Replay stopped</string>
+    <string name="macro_selected_row">Selected row</string>
+    <string name="macro_play_disabled">Select a macro to enable Play</string>
+</resources>

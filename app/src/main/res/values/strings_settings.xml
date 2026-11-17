@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Strings owned by SettingActivity.
+
+  Kept in their own file so the settings screen can be edited without touching the shared
+  strings.xml, which several other screens also write to. Every key is prefixed set_ so a
+  collision with the shared file is impossible.
+-->
+<resources>
+
+    <!-- App bar subtitle: version and build type. -->
+    <string name="set_subtitle">%1$s (%2$s)</string>
+    <string name="set_subtitle_fallback">Container settings</string>
+
+    <!-- Keep-alive cost disclosure. -->
+    <string name="set_keepalive_cost">Keeps clones resident at the cost of battery. Cannot survive a force-stop from recents.</string>
+
+    <!-- GMS row subtitle. -->
+    <string name="set_gms_installed_in">Installed in %1$d of %2$d users</string>
+    <string name="set_gms_not_installed">Not installed in any user</string>
+
+    <!-- Proxy row subtitle and overview. -->
+    <string name="set_proxy_routed">%1$d clone(s) routed</string>
+    <string name="set_proxy_none_bound">No clone has a proxy bound</string>
+    <string name="set_proxy_overview_title">Proxy bindings</string>
+    <string name="set_proxy_overview_empty">A proxy is bound per clone, because two clones of the same app usually want different exits. Open a clone to set one.</string>
+    <string name="set_proxy_open">Open</string>
+    <string name="set_proxy_close">Close</string>
+
+    <!-- Xposed and hiding switches. -->
+    <string name="set_restart_running_clones">Running clones keep the old value until they are relaunched</string>
+    <string name="set_xposed_write_failed">Could not change the Xposed switch: %1$s</string>
+
+    <!-- Diagnostics row. -->
+    <string name="set_diag_unavailable">Could not run the checks</string>
+
+    <!-- Engine version. -->
+    <string name="set_engine_version">BlackBox 4.0.0</string>
+
+    <!-- Boot re-arm switch. -->
+    <string name="set_boot_rearm">Re-arm keep-alive after reboot</string>
+
+    <!-- Preview capture switch. -->
+    <string name="set_preview_capture">Capture clone previews</string>
+
+</resources>

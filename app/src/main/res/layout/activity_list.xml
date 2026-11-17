@@ -117,25 +117,20 @@
             android:layout_marginEnd="@dimen/space_2"
             android:background="@drawable/bg_chip_on"
             android:textColor="@color/text_on_accent"
-            android:text="All" />
+            android:text="@string/legacy_chip_all" />
 
         <TextView
             android:id="@+id/chipUser"
             style="@style/Nc.Chip"
             android:layout_marginEnd="@dimen/space_2"
-            android:text="User" />
+            android:text="@string/legacy_chip_not_cloned" />
 
         <TextView
             android:id="@+id/chipSystem"
             style="@style/Nc.Chip"
             android:layout_marginEnd="@dimen/space_2"
-            android:text="System" />
+            android:text="@string/legacy_chip_cloned" />
 
-        <TextView
-            android:id="@+id/chipCloned"
-            style="@style/Nc.Chip"
-            android:layout_marginEnd="@dimen/space_2"
-            android:text="Cloned" />
     </LinearLayout>
 
     <!-- Section head -->

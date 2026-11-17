@@ -5,15 +5,23 @@ package com.kiyoscripts.nexusclone.core.instance
  *
  * Transitions are owned exclusively by [InstanceManager]; nothing else writes this value.
  *
- *   CREATED    -> INSTALLED   (apk copied into the virtual root)
- *   INSTALLED  -> COLD        (first launch intent issued)
- *   COLD       -> WARM        (guest process attached)
- *   WARM       -> FOREGROUND  (guest activity resumed)
- *   FOREGROUND -> BACKGROUND  (guest activity paused)
- *   BACKGROUND -> WARM        (guest activity resumed again)
- *   WARM       -> FROZEN      (explicit freeze, process killed, data kept)
- *   FROZEN     -> COLD        (unfreeze, next launch is a cold start)
- *   any        -> DEAD        (uninstalled or data wiped)
+ * The table below is what the code actually does, not what it was meant to do:
+ *
+ *   (insert)   -> CREATED     (row written before the install is confirmed)
+ *   CREATED    -> INSTALLED   (row persisted, apk present in the virtual root)
+ *   INSTALLED  -> COLD        (launch() issues the launch intent)
+ *   COLD       -> FOREGROUND  (onGuestResumed promotes the row)
+ *   FOREGROUND -> BACKGROUND  (onGuestPaused demotes the row)
+ *   BACKGROUND -> FOREGROUND  (onGuestResumed promotes it again)
+ *   any        -> FROZEN      (explicit freeze, process killed, data kept)
+ *   FROZEN     -> INSTALLED   (unfreeze of a never-launched clone)
+ *   FROZEN     -> COLD        (unfreeze of a clone that has launched before)
+ *   any        -> DEAD        (persisted before the row is deleted, so a crash
+ *                              between uninstall and delete leaves a recoverable row)
+ *
+ * WARM is still a legal value and still counts as resident, but no transition in
+ * [InstanceManager] targets it any more: the guest lifecycle callback is the only
+ * source of truth for a running process, and it reports FOREGROUND/BACKGROUND.
  */
 enum class InstanceState {
     CREATED,

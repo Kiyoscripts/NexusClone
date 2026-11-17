@@ -1,0 +1,6 @@
+<resources>
+    <string name="inst_label_blank">Name cannot be empty</string>
+    <string name="inst_label_too_long">Name is too long (max 64 characters)</string>
+    <string name="inst_duplicate_suffix">copy</string>
+    <string name="inst_dead_pending_purge">Removal incomplete, retry</string>
+</resources>

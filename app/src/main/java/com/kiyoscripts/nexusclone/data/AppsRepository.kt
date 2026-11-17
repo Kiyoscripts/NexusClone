@@ -1,25 +1,18 @@
 package com.kiyoscripts.nexusclone.data
 
-import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.drawable.Drawable
-import android.net.Uri
 import android.util.Log
 import android.util.LruCache
 import androidx.lifecycle.MutableLiveData
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.utils.AbiUtils
-import com.kiyoscripts.nexusclone.R
 import com.kiyoscripts.nexusclone.app.App
-import com.kiyoscripts.nexusclone.app.AppManager
 import com.kiyoscripts.nexusclone.bean.AppInfo
 import com.kiyoscripts.nexusclone.bean.InstalledAppBean
 import com.kiyoscripts.nexusclone.core.instance.InstanceManager
 import com.kiyoscripts.nexusclone.util.MemoryManager
-import com.kiyoscripts.nexusclone.util.inflate
-import com.kiyoscripts.nexusclone.util.getString
 import java.io.File
-import android.webkit.URLUtil
 
 
 /**
@@ -69,7 +62,11 @@ class AppsRepository {
     }
     
     /**
-     * Safely load app icon with fallback to null
+     * Safely load app icon.
+     *
+     * Never returns null for a package that has an ApplicationInfo: when the memory guard
+     * trips, the caller gets [MemoryManager.placeholderIcon] instead of nothing, so a row
+     * always has something to draw and the grid does not fall back to a blank cell.
      */
     private fun safeLoadAppIcon(applicationInfo: ApplicationInfo): Drawable? {
         val pkg = applicationInfo.packageName ?: return null
@@ -78,10 +75,12 @@ class AppsRepository {
         iconCache.get(pkg)?.let { return it }
 
         return try {
-            // Check if we should skip icon loading to save memory
+            // Check if we should skip icon loading to save memory. The placeholder is not
+            // cached: it is cheap to build and caching it would pin a fake icon in place
+            // for the rest of the process once memory recovered.
             if (MemoryManager.shouldSkipIconLoading()) {
-                Log.w(TAG, "Memory usage high (${MemoryManager.getMemoryUsagePercentage()}%), skipping icon for $pkg")
-                return null
+                Log.w(TAG, "Memory usage high (${MemoryManager.getMemoryUsagePercentage()}%), using placeholder icon for $pkg")
+                return MemoryManager.placeholderIcon(App.getContext())
             }
 
             val icon = BlackBoxCore.getPackageManager().getApplicationIcon(applicationInfo)
@@ -112,16 +111,70 @@ class AppsRepository {
             optimized
         } catch (e: Exception) {
             Log.w(TAG, "Failed to load icon for $pkg: ${e.message}")
-            null // Fallback to null icon
+            MemoryManager.placeholderIcon(App.getContext())
         }
     }
 
-    fun previewInstallList() {
+    /**
+     * Resolve and cache the icon for one package, on demand.
+     *
+     * [previewInstallList] can be asked to skip icon decoding entirely, which is what the
+     * picker does: it only ever shows the rows that are on screen. This resolves a single
+     * icon when a row actually needs one, so the cost is one decode per visible package
+     * instead of one per installed package.
+     *
+     * The ApplicationInfo is looked up from the stored list first, so a package that is not
+     * in the list is not resolved at all.
+     */
+    fun iconFor(packageName: String): Drawable? {
+        iconCache.get(packageName)?.let { return it }
+
+        val stored = synchronized(mInstalledList) {
+            mInstalledList.firstOrNull { it.packageName == packageName }
+        } ?: return null
+
+        stored.icon?.let {
+            iconCache.put(packageName, it)
+            return it
+        }
+
+        val applicationInfo = try {
+            BlackBoxCore.getPackageManager().getApplicationInfo(packageName, 0)
+        } catch (e: Exception) {
+            Log.w(TAG, "no ApplicationInfo for $packageName: ${e.message}")
+            return null
+        }
+        return safeLoadAppIcon(applicationInfo)
+    }
+
+    /**
+     * Populate the installed-app list.
+     *
+     * @param withIcons when false (the default) no icon is decoded at all and every stored
+     *        [AppInfo] carries a null icon. Callers that only render a few rows should leave
+     *        this false and pull icons through [iconFor] as rows bind; decoding the whole
+     *        installed set up front is one binder round-trip plus one bitmap decode per
+     *        package, which is the single most expensive thing this class does.
+     */
+    fun previewInstallList(withIcons: Boolean = false) {
         try {
             synchronized(mInstalledList) {
                 val installedApplications: List<ApplicationInfo> =
                     BlackBoxCore.getPackageManager().getInstalledApplications(0)
                 val installedList = mutableListOf<AppInfo>()
+
+                // Resolve the installed-module set once, before the loop.
+                //
+                // This is not the same question as "is this apk an Xposed module", which is
+                // what BlackBoxCore.get().isXposedModule(file) answers by parsing the
+                // archive. The two sets differ: the archive parse says what the apk claims
+                // to be, the installed set says what the engine actually has installed as a
+                // module. getInstalledModuleList needs the installed answer, so the archive
+                // parse cannot be substituted for it. What can go away is doing the parse
+                // per app: the installed set is one binder round-trip for the whole list,
+                // and a package that is not in it is not a module as far as the engine is
+                // concerned, so it is reported as false without touching its archive.
+                val xpModules = xposedModulePackages()
 
                 for (installedApplication in installedApplications) {
                     try {
@@ -137,14 +190,12 @@ class AppsRepository {
                             continue
                         }
 
-                        val isXpModule = BlackBoxCore.get().isXposedModule(file)
-
                         val info = AppInfo(
                             safeLoadAppLabel(installedApplication),
-                            safeLoadAppIcon(installedApplication), // Remove the !! operator to allow null icons
+                            if (withIcons) safeLoadAppIcon(installedApplication) else null,
                             installedApplication.packageName,
                             installedApplication.sourceDir,
-                            isXpModule
+                            installedApplication.packageName in xpModules
                         )
                         installedList.add(info)
                     } catch (e: Exception) {
@@ -168,7 +219,9 @@ class AppsRepository {
      * been cloned at all. That is answered here from the instance store, not from the
      * engine, so this call does not touch the :black process.
      *
-     * Call [previewInstallList] first; this reads the list it populated.
+     * Call [previewInstallList] first; this reads the list it populated. Rows whose stored
+     * [AppInfo] has no icon get one resolved here, so the picker still shows icons while
+     * paying for one decode per returned row rather than one per installed package.
      */
     fun installedAppsSnapshot(): List<InstalledAppBean> {
         val cloned: Set<String> = try {
@@ -183,7 +236,7 @@ class AppsRepository {
             mInstalledList.map {
                 InstalledAppBean(
                     it.name,
-                    it.icon,
+                    it.icon ?: iconFor(it.packageName),
                     it.packageName,
                     it.sourceDir,
                     it.packageName in cloned
@@ -218,7 +271,7 @@ class AppsRepository {
                 val newInstalledList = mInstalledList.map {
                     InstalledAppBean(
                         it.name,
-                        it.icon, // Remove the !! operator to allow null icons
+                        it.icon ?: iconFor(it.packageName),
                         it.packageName,
                         it.sourceDir,
                         it.packageName in installedHere
@@ -248,7 +301,7 @@ class AppsRepository {
                 }.map {
                     InstalledAppBean(
                         it.name,
-                        it.icon, // Remove the !! operator to allow null icons
+                        it.icon ?: iconFor(it.packageName),
                         it.packageName,
                         it.sourceDir,
                         it.packageName in xpModules
@@ -261,165 +314,6 @@ class AppsRepository {
             Log.e(TAG, "Error in getInstalledModuleList: ${e.message}")
             loadingLiveData.postValue(false)
             appsLiveData.postValue(emptyList())
-        }
-    }
-
-    fun getVmInstallList(userId: Int, appsLiveData: MutableLiveData<List<AppInfo>>) {
-        try {
-            // Check memory status before starting
-            if (MemoryManager.isMemoryCritical()) {
-                Log.w(TAG, "Memory critical (${MemoryManager.getMemoryUsagePercentage()}%), forcing garbage collection")
-                MemoryManager.forceGarbageCollectionIfNeeded()
-            }
-            
-            val blackBoxCore = BlackBoxCore.get()
-            
-            // Add debugging for users
-            val users = blackBoxCore.users
-            Log.d(TAG, "getVmInstallList: userId=$userId, total users=${users.size}")
-            users.forEach { user ->
-                Log.d(TAG, "User: id=${user.id}, name=${user.name}")
-            }
-            
-            val sortListData =
-                AppManager.mRemarkSharedPreferences.getString("AppList$userId", "")
-            val sortList = sortListData?.split(",")
-
-            // Add retry mechanism for getting installed applications
-            var applicationList: List<ApplicationInfo>? = null
-            var retryCount = 0
-            val maxRetries = 3
-            
-            while (applicationList == null && retryCount < maxRetries) {
-                try {
-                    applicationList = blackBoxCore.getInstalledApplications(0, userId)
-                    if (applicationList == null) {
-                        Log.w(TAG, "getVmInstallList: Attempt ${retryCount + 1} returned null, retrying...")
-                        retryCount++
-                        Thread.sleep(100) // Small delay before retry
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "getVmInstallList: Error getting applications on attempt ${retryCount + 1}: ${e.message}")
-                    retryCount++
-                    if (retryCount < maxRetries) {
-                        Thread.sleep(200) // Longer delay for errors
-                    }
-                }
-            }
-            
-            // Add null check for applicationList
-            if (applicationList == null) {
-                Log.e(TAG, "getVmInstallList: applicationList is null for userId=$userId after $maxRetries attempts")
-                appsLiveData.postValue(emptyList())
-                return
-            }
-            
-            // Add debugging
-            Log.d(TAG, "getVmInstallList: userId=$userId, applicationList.size=${applicationList.size}")
-            if (applicationList.isNotEmpty()) {
-                Log.d(TAG, "First app: ${applicationList.first().packageName}")
-            } else {
-                Log.w(TAG, "getVmInstallList: No applications found for userId=$userId")
-            }
-
-            val appInfoList = mutableListOf<AppInfo>()
-
-            // One binder round-trip for the whole list, not one per row. See
-            // xposedModulePackages() for why this matters once GMS is installed.
-            val xpModules = xposedModulePackages()
-            
-            // Sort the application list if sort data exists
-            val sortedApplicationList = if (!sortList.isNullOrEmpty()) {
-                try {
-                    applicationList.sortedWith(AppsSortComparator(sortList))
-                } catch (e: Exception) {
-                    Log.e(TAG, "getVmInstallList: Error sorting applications: ${e.message}")
-                    applicationList // Return unsorted list if sorting fails
-                }
-            } else {
-                applicationList
-            }
-            
-            // Process each application with enhanced error handling
-            sortedApplicationList.forEachIndexed { index, applicationInfo ->
-                try {
-                    // Check memory periodically during processing
-                    if (index > 0 && index % 25 == 0) {
-                        if (MemoryManager.isMemoryCritical()) {
-                            Log.w(TAG, "Memory critical during processing, forcing GC")
-                            MemoryManager.forceGarbageCollectionIfNeeded()
-                        }
-                    }
-                    
-                    // Add null check for applicationInfo
-                    if (applicationInfo == null) {
-                        Log.w(TAG, "getVmInstallList: Skipping null applicationInfo at index $index")
-                        return@forEachIndexed
-                    }
-                    
-                    // Validate package name
-                    if (applicationInfo.packageName.isNullOrBlank()) {
-                        Log.w(TAG, "getVmInstallList: Skipping app with null/blank package name at index $index")
-                        return@forEachIndexed
-                    }
-                    
-                    val info = AppInfo(
-                        safeLoadAppLabel(applicationInfo),
-                        safeLoadAppIcon(applicationInfo), // Remove the !! operator to allow null icons
-                        applicationInfo.packageName,
-                        applicationInfo.sourceDir ?: "",
-                        applicationInfo.packageName in xpModules
-                    )
-
-                    appInfoList.add(info)
-                    
-                    // Log progress for large lists
-                    if (index > 0 && index % 50 == 0) {
-                        Log.d(TAG, "getVmInstallList: Processed $index/${sortedApplicationList.size} apps - ${MemoryManager.getMemoryInfo()}")
-                    }
-                    
-                } catch (e: Exception) {
-                    Log.e(TAG, "getVmInstallList: Error processing app at index $index (${applicationInfo?.packageName}): ${e.message}")
-                    // Continue processing other apps instead of failing completely
-                }
-            }
-
-            Log.d(TAG, "getVmInstallList: processed ${appInfoList.size} apps - ${MemoryManager.getMemoryInfo()}")
-            
-            // If no virtual apps found, show empty list (correct behavior for new users)
-            // Do NOT load regular installed apps as fallback - this causes the bug
-            if (appInfoList.isEmpty()) {
-                Log.d(TAG, "getVmInstallList: No virtual apps found for userId=$userId, showing empty list (correct for new users)")
-            } else {
-                Log.d(TAG, "getVmInstallList: Showing ${appInfoList.size} virtual apps for userId=$userId")
-            }
-            
-            // Post the result safely
-            try {
-                appsLiveData.postValue(appInfoList)
-            } catch (e: Exception) {
-                Log.e(TAG, "getVmInstallList: Error posting to LiveData: ${e.message}")
-                // Try to post on main thread as fallback
-                try {
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        try {
-                            appsLiveData.postValue(appInfoList)
-                        } catch (e2: Exception) {
-                            Log.e(TAG, "getVmInstallList: Fallback posting also failed: ${e2.message}")
-                        }
-                    }
-                } catch (e3: Exception) {
-                    Log.e(TAG, "getVmInstallList: Could not schedule fallback posting: ${e3.message}")
-                }
-            }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in getVmInstallList: ${e.message}")
-            try {
-                appsLiveData.postValue(emptyList())
-            } catch (e2: Exception) {
-                Log.e(TAG, "getVmInstallList: Error posting empty list: ${e2.message}")
-            }
         }
     }
 
@@ -442,180 +336,5 @@ class AppsRepository {
     } catch (e: Exception) {
         Log.w(TAG, "could not read Xposed module list: ${e.message}")
         emptySet()
-    }
-
-    private fun isInstalledXpModule(packageName: String): Boolean {
-        return try {
-            BlackBoxCore.get().installedXPModules.forEach {
-                if (packageName == it.packageName) {
-                    return@isInstalledXpModule true
-                }
-            }
-            false
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking Xposed module: ${e.message}")
-            false
-        }
-    }
-
-    fun installApk(source: String, userId: Int, resultLiveData: MutableLiveData<String>) {
-        try {
-            // Refuse to install the container into itself.
-            //
-            // The cheap pre-filter below is a substring test on the source string, which is
-            // only a hint: a renamed apk will not match it. The authoritative check is the
-            // package-name comparison inside, which compares the archive's package against
-            // the host package. The pre-filter exists so the common case does not pay for
-            // an archive parse.
-            if (source.contains("nexusclone") || source.contains("blackbox") ||
-                source.contains("niunaijun") || source.contains("vspace") ||
-                source.contains("virtual")
-            ) {
-                try {
-                    val blackBoxCore = BlackBoxCore.get()
-                    val hostPackageName = BlackBoxCore.getHostPkg()
-
-                    // If it's a file path, try to check the package name
-                    if (!URLUtil.isValidUrl(source)) {
-                        val file = File(source)
-                        if (file.exists()) {
-                            val packageInfo = BlackBoxCore.getPackageManager().getPackageArchiveInfo(source, 0)
-                            if (packageInfo != null && packageInfo.packageName == hostPackageName) {
-                                resultLiveData.postValue(getString(R.string.install_self_refused))
-                                return
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not verify whether this is the host app: ${e.message}")
-                }
-            }
-            
-            val blackBoxCore = BlackBoxCore.get()
-            val installResult = if (URLUtil.isValidUrl(source)) {
-                val uri = Uri.parse(source)
-                blackBoxCore.installPackageAsUser(uri, userId)
-            } else {
-                blackBoxCore.installPackageAsUser(source, userId)
-            }
-
-            if (installResult.success) {
-                updateAppSortList(userId, installResult.packageName, true)
-                resultLiveData.postValue(getString(R.string.install_success))
-            } else {
-                resultLiveData.postValue(getString(R.string.install_fail, installResult.msg))
-            }
-            scanUser()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error installing APK: ${e.message}")
-            resultLiveData.postValue("Installation failed: ${e.message}")
-        }
-    }
-
-    fun unInstall(packageName: String, userID: Int, resultLiveData: MutableLiveData<String>) {
-        try {
-            BlackBoxCore.get().uninstallPackageAsUser(packageName, userID)
-            updateAppSortList(userID, packageName, false)
-            scanUser()
-            resultLiveData.postValue(getString(R.string.uninstall_success))
-        } catch (e: Exception) {
-            Log.e(TAG, "Error uninstalling APK: ${e.message}")
-            resultLiveData.postValue("Uninstallation failed: ${e.message}")
-        }
-    }
-
-    fun launchApk(packageName: String, userId: Int, launchLiveData: MutableLiveData<Boolean>) {
-        try {
-            val result = BlackBoxCore.get().launchApk(packageName, userId)
-            launchLiveData.postValue(result)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error launching APK: ${e.message}")
-            launchLiveData.postValue(false)
-        }
-    }
-
-    fun clearApkData(packageName: String, userID: Int, resultLiveData: MutableLiveData<String>) {
-        try {
-            BlackBoxCore.get().clearPackage(packageName, userID)
-            resultLiveData.postValue(getString(R.string.clear_success))
-        } catch (e: Exception) {
-            Log.e(TAG, "Error clearing APK data: ${e.message}")
-            resultLiveData.postValue("Clear failed: ${e.message}")
-        }
-    }
-
-    /**
-     * 倒序递归扫描用户，
-     * 如果用户是空的，就删除用户，删除用户备注，删除应用排序列表
-     */
-    private fun scanUser() {
-        try {
-            val blackBoxCore = BlackBoxCore.get()
-            val userList = blackBoxCore.users
-
-            if (userList.isEmpty()) {
-                return
-            }
-
-            val id = userList.last().id
-
-            if (blackBoxCore.getInstalledApplications(0, id).isEmpty()) {
-                blackBoxCore.deleteUser(id)
-                AppManager.mRemarkSharedPreferences.edit().apply {
-                    remove("Remark$id")
-                    remove("AppList$id")
-                    apply()
-                }
-                scanUser()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in scanUser: ${e.message}")
-        }
-    }
-
-    /**
-     * 更新排序列表
-     * @param userID Int
-     * @param pkg String
-     * @param isAdd Boolean true是添加，false是移除
-     */
-    private fun updateAppSortList(userID: Int, pkg: String, isAdd: Boolean) {
-        try {
-            val savedSortList =
-                AppManager.mRemarkSharedPreferences.getString("AppList$userID", "")
-
-            val sortList = linkedSetOf<String>()
-            if (savedSortList != null) {
-                sortList.addAll(savedSortList.split(","))
-            }
-
-            if (isAdd) {
-                sortList.add(pkg)
-            } else {
-                sortList.remove(pkg)
-            }
-
-            AppManager.mRemarkSharedPreferences.edit().apply {
-                putString("AppList$userID", sortList.joinToString(","))
-                apply()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating app sort list: ${e.message}")
-        }
-    }
-
-    /**
-     * 保存排序后的apk顺序
-     */
-    fun updateApkOrder(userID: Int, dataList: List<AppInfo>) {
-        try {
-            AppManager.mRemarkSharedPreferences.edit().apply {
-                putString("AppList$userID",
-                    dataList.joinToString(",") { it.packageName })
-                apply()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating APK order: ${e.message}")
-        }
     }
 }

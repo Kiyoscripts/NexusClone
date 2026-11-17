@@ -58,7 +58,8 @@ data class Macro(
     val packageName: String,
     val events: List<MacroEvent>,
     val createdAt: Long = System.currentTimeMillis(),
-    val loopCount: Int = 1
+    val loopCount: Int = 1,
+    val lastPlayedAt: Long = 0L
 ) {
     val durationMs: Long get() = events.lastOrNull()?.t ?: 0L
 }
@@ -81,7 +82,7 @@ class MacroStore(context: Context) : SQLiteOpenHelper(
     companion object {
         private const val TAG = "MacroStore"
         private const val DB_NAME = "nexus_macros.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
         const val TABLE = "macros"
     }
 
@@ -95,16 +96,41 @@ class MacroStore(context: Context) : SQLiteOpenHelper(
                 package_name TEXT NOT NULL,
                 events TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
-                loop_count INTEGER NOT NULL DEFAULT 1
+                loop_count INTEGER NOT NULL DEFAULT 1,
+                last_played_at INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX idx_macro_key ON $TABLE (user_id, package_name)")
     }
 
+    /**
+     * Additive migration only. Dropping the table here used to wipe every saved macro on
+     * any schema bump, which is data loss for a feature whose whole value is the recording.
+     */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE")
-        onCreate(db)
+        if (oldVersion < 2) {
+            try {
+                if (!columnExists(db, TABLE, "last_played_at")) {
+                    db.execSQL(
+                        "ALTER TABLE $TABLE ADD COLUMN last_played_at INTEGER NOT NULL DEFAULT 0"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "migrate last_played_at failed: ${e.message}")
+            }
+        }
+    }
+
+    /** True when [table] already has [column]. Used to keep migrations idempotent. */
+    private fun columnExists(db: SQLiteDatabase, table: String, column: String): Boolean {
+        db.rawQuery("PRAGMA table_info($table)", null).use { c ->
+            val nameIdx = c.getColumnIndex("name")
+            while (c.moveToNext()) {
+                if (nameIdx >= 0 && c.getString(nameIdx) == column) return true
+            }
+        }
+        return false
     }
 
     fun insert(m: Macro): Long {
@@ -115,6 +141,7 @@ class MacroStore(context: Context) : SQLiteOpenHelper(
             put("events", encode(m.events))
             put("created_at", m.createdAt)
             put("loop_count", m.loopCount)
+            put("last_played_at", m.lastPlayedAt)
         }
         return writableDatabase.insert(TABLE, null, cv)
     }
@@ -124,6 +151,7 @@ class MacroStore(context: Context) : SQLiteOpenHelper(
             put("name", m.name)
             put("events", encode(m.events))
             put("loop_count", m.loopCount)
+            put("last_played_at", m.lastPlayedAt)
         }
         return writableDatabase.update(TABLE, cv, "id = ?", arrayOf(m.id.toString()))
     }
@@ -131,9 +159,15 @@ class MacroStore(context: Context) : SQLiteOpenHelper(
     fun delete(id: Long): Int =
         writableDatabase.delete(TABLE, "id = ?", arrayOf(id.toString()))
 
-    fun all(): List<Macro> {
+    fun all(): List<Macro> = query(null, null)
+
+    fun forInstance(userId: Int, packageName: String): List<Macro> =
+        query("user_id = ? AND package_name = ?", arrayOf(userId.toString(), packageName))
+
+    /** Shared row reader. Selection is a real WHERE clause, not a post-filter. */
+    private fun query(selection: String?, args: Array<String>?): List<Macro> {
         val out = ArrayList<Macro>()
-        readableDatabase.query(TABLE, null, null, null, null, null, "id ASC").use { c ->
+        readableDatabase.query(TABLE, null, selection, args, null, null, "id ASC").use { c ->
             while (c.moveToNext()) {
                 out.add(
                     Macro(
@@ -143,7 +177,8 @@ class MacroStore(context: Context) : SQLiteOpenHelper(
                         packageName = c.getString(c.getColumnIndexOrThrow("package_name")),
                         events = decode(c.getString(c.getColumnIndexOrThrow("events"))),
                         createdAt = c.getLong(c.getColumnIndexOrThrow("created_at")),
-                        loopCount = c.getInt(c.getColumnIndexOrThrow("loop_count"))
+                        loopCount = c.getInt(c.getColumnIndexOrThrow("loop_count")),
+                        lastPlayedAt = c.getLong(c.getColumnIndexOrThrow("last_played_at"))
                     )
                 )
             }
@@ -151,8 +186,11 @@ class MacroStore(context: Context) : SQLiteOpenHelper(
         return out
     }
 
-    fun forInstance(userId: Int, packageName: String): List<Macro> =
-        all().filter { it.userId == userId && it.packageName == packageName }
+    /** Stamp one macro as played now. Used to order or badge recently used macros. */
+    fun markPlayed(id: Long) {
+        val cv = ContentValues().apply { put("last_played_at", System.currentTimeMillis()) }
+        writableDatabase.update(TABLE, cv, "id = ?", arrayOf(id.toString()))
+    }
 
     private fun encode(events: List<MacroEvent>): String =
         JSONArray().apply { events.forEach { put(it.toJson()) } }.toString()
@@ -201,6 +239,21 @@ class MacroRecorder {
     fun onTouch(action: Int, x: Float, y: Float) {
         if (!recording) return
         val t = SystemClock.uptimeMillis() - startAt
+        // A cancelled gesture (scroll takeover, window focus loss) never delivers ACTION_UP.
+        // Synthesize one at the last known point so the recording never ends on a bare DOWN,
+        // which would replay as a finger held down forever.
+        if (action == android.view.MotionEvent.ACTION_CANCEL) {
+            val last = events.lastOrNull()
+            events.add(
+                MacroEvent(
+                    t = t,
+                    type = MacroEvent.EventType.UP,
+                    x = last?.x ?: x,
+                    y = last?.y ?: y
+                )
+            )
+            return
+        }
         val type = when (action) {
             android.view.MotionEvent.ACTION_DOWN -> MacroEvent.EventType.DOWN
             android.view.MotionEvent.ACTION_MOVE -> MacroEvent.EventType.MOVE
@@ -306,14 +359,22 @@ class MacroPlayer(
     private var loop = 0
     private var cancelled = false
 
+    /** downTime of the gesture in flight, so DOWN, MOVE and UP share one gesture. */
+    private var gestureDownTime = 0L
+
+    val isRunning: Boolean get() = !cancelled && loop > 0
+
     fun start() {
         cancelled = false
         loop = 0
+        gestureDownTime = 0L
         scheduleLoop()
     }
 
     fun cancel() {
         cancelled = true
+        loop = 0
+        gestureDownTime = 0L
         handler.removeCallbacksAndMessages(null)
     }
 
@@ -324,19 +385,26 @@ class MacroPlayer(
             return
         }
         loop++
+        // One base per loop. Every event is offset from it, and the next loop is scheduled
+        // from the last event's timestamp plus a fixed gap, so a long macro cannot drift
+        // and consecutive loops cannot overlap.
         val base = SystemClock.uptimeMillis()
         for (e in macro.events) {
             handler.postDelayed({
                 if (!cancelled) dispatch(e)
             }, e.t)
         }
-        val total = macro.durationMs + 250L
-        handler.postDelayed({ scheduleLoop() }, total)
+        val nextAt = macro.durationMs + 250L
+        handler.postDelayed({ scheduleLoop() }, nextAt)
     }
 
     private fun dispatch(e: MacroEvent) {
         try {
-            val downTime = SystemClock.uptimeMillis()
+            if (e.type == MacroEvent.EventType.DOWN) {
+                gestureDownTime = SystemClock.uptimeMillis()
+            }
+            val downTime = if (gestureDownTime != 0L) gestureDownTime
+            else SystemClock.uptimeMillis()
             val action = when (e.type) {
                 MacroEvent.EventType.DOWN -> android.view.MotionEvent.ACTION_DOWN
                 MacroEvent.EventType.MOVE -> android.view.MotionEvent.ACTION_MOVE
@@ -358,6 +426,7 @@ class MacroPlayer(
                 target.dispatchTouchEvent(up)
                 up.recycle()
             }
+            if (e.type == MacroEvent.EventType.UP) gestureDownTime = 0L
         } catch (ex: Exception) {
             Log.w(TAG, "dispatch failed: ${ex.message}")
         }

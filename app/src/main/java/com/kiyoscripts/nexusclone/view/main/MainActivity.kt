@@ -3,10 +3,8 @@ package com.kiyoscripts.nexusclone.view.main
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
-import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.Log
-import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +13,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.doOnLayout
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -24,7 +23,6 @@ import com.kiyoscripts.nexusclone.bean.InstalledAppBean
 import com.kiyoscripts.nexusclone.core.diag.Check
 import com.kiyoscripts.nexusclone.core.diag.Diagnostics
 import com.kiyoscripts.nexusclone.core.instance.CloneInstance
-import com.kiyoscripts.nexusclone.core.instance.InstanceState
 import com.kiyoscripts.nexusclone.core.instance.InstanceManager
 import com.kiyoscripts.nexusclone.core.keepalive.KeepAliveController
 import com.kiyoscripts.nexusclone.core.preview.PreviewCache
@@ -34,11 +32,10 @@ import com.kiyoscripts.nexusclone.databinding.ItemCloneBinding
 import com.kiyoscripts.nexusclone.databinding.ItemPackageBinding
 import com.kiyoscripts.nexusclone.ui.diag.DiagnosticsActivity
 import com.kiyoscripts.nexusclone.ui.instance.InstanceDetailActivity
-import com.kiyoscripts.nexusclone.ui.proxy.ProxyActivity
+import com.kiyoscripts.nexusclone.ui.instance.stateLabel
 import com.kiyoscripts.nexusclone.util.toast
 import com.kiyoscripts.nexusclone.view.fake.FakeManagerActivity
 import com.kiyoscripts.nexusclone.view.gms.GmsManagerActivity
-import com.kiyoscripts.nexusclone.view.setting.SettingActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +44,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.niunaijun.blackbox.BlackBoxCore
 import java.io.File
 
 /**
@@ -97,9 +95,6 @@ class MainActivity : AppCompatActivity() {
      */
     private val workScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    /** Package icons, keyed by package name. getApplicationIcon is a binder round-trip. */
-    private val iconCache = LruCache<String, Drawable>(96)
-
     /** The full installed-app list, before the search box and the chips narrow it. */
     private var allApps: List<InstalledAppBean> = emptyList()
 
@@ -108,7 +103,50 @@ class MainActivity : AppCompatActivity() {
     /** Last diagnostics sweep, used for the status strip and the Settings badge. */
     private var lastChecks: List<Check> = emptyList()
 
+    /** When [lastChecks] was produced, so a quick return does not re-run the sweep. */
+    private var lastChecksAt = 0L
+
     private enum class Tab { CLONES, APPS, SETTINGS }
+
+    /**
+     * Import an apk from storage as a new clone.
+     *
+     * The persistable grant is best effort: some providers refuse it, and the one-shot
+     * read grant from the picker is enough for the install that follows immediately.
+     */
+    private val importApk =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "no persistable grant for $uri: ${e.message}")
+            }
+
+            lifecycleScope.launch {
+                binding.appsProgress.visibility = View.VISIBLE
+                try {
+                    manager.create(uri.toString()).fold(
+                        onSuccess = { inst ->
+                            toast(getString(R.string.clone_created, inst.label))
+                            selectTab(Tab.CLONES)
+                        },
+                        onFailure = { e ->
+                            toast(getString(R.string.clone_failed, e.message ?: "unknown"))
+                        }
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    toast(getString(R.string.clone_failed, e.message ?: "unknown"))
+                } finally {
+                    binding.appsProgress.visibility = View.GONE
+                }
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,6 +160,18 @@ class MainActivity : AppCompatActivity() {
 
         // Starts the preview refresh timer and eviction on ON_START, stops on ON_STOP.
         previews.attach(this)
+
+        // The grid scrolls under the tab bar, so its last row and the FAB would sit behind
+        // it. Pad the grid by the bar's measured height, keeping the padding it declares.
+        val gridBaseBottom = binding.cloneGrid.paddingBottom
+        binding.tabbar.doOnLayout { bar ->
+            binding.cloneGrid.setPadding(
+                binding.cloneGrid.paddingLeft,
+                binding.cloneGrid.paddingTop,
+                binding.cloneGrid.paddingRight,
+                gridBaseBottom + bar.height
+            )
+        }
 
         initTabs()
         initCloneGrid()
@@ -191,6 +241,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun observeInstances() {
         lifecycleScope.launch {
+            // The first refresh is a store read plus an engine query; the grid is empty
+            // until it lands, so the spinner covers that window.
+            binding.clonesProgress.visibility = View.VISIBLE
             try {
                 manager.refresh()
             } catch (e: CancellationException) {
@@ -199,7 +252,20 @@ class MainActivity : AppCompatActivity() {
                 Log.w(TAG, "initial instance refresh failed: ${e.message}")
             }
 
+            // A crash between uninstall and row delete leaves a DEAD row behind. Clearing
+            // them here means the grid never shows a clone that cannot be opened, and the
+            // diagnostics check stops reporting a dead instance the user cannot act on.
+            try {
+                val purged = manager.purgeDead()
+                if (purged > 0) Log.i(TAG, "purged $purged dead instance row(s)")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "purgeDead failed: ${e.message}")
+            }
+
             manager.instances.collectLatest { list ->
+                binding.clonesProgress.visibility = View.GONE
                 cloneAdapter.submit(list)
                 binding.clonesEmpty.visibility =
                     if (list.isEmpty()) View.VISIBLE else View.GONE
@@ -220,7 +286,12 @@ class MainActivity : AppCompatActivity() {
                     getString(R.string.nc_clone_count, list.size)
                 }
                 if (running > 0) {
-                    count + " · " + getString(R.string.nc_running_count, running)
+                    val runningText = getString(R.string.nc_running_count, running)
+                    if (list.size == 1) {
+                        getString(R.string.ui_clones_running_one, count, runningText)
+                    } else {
+                        getString(R.string.ui_clones_running, count, runningText)
+                    }
                 } else {
                     count
                 }
@@ -250,11 +321,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.chipAll.setOnClickListener { setAppChip(Chip.ALL) }
-        binding.chipUser.setOnClickListener { setAppChip(Chip.USER) }
-        binding.chipSystem.setOnClickListener { setAppChip(Chip.SYSTEM) }
+        binding.chipUser.setOnClickListener { setAppChip(Chip.NOT_CLONED) }
+        binding.chipSystem.setOnClickListener { setAppChip(Chip.CLONED) }
     }
 
-    private enum class Chip { ALL, USER, SYSTEM }
+    /**
+     * Picker filter.
+     *
+     * The repository already drops FLAG_SYSTEM packages, so a user/system split would be
+     * a lie. The only distinction the picker can honestly make is cloned or not.
+     */
+    private enum class Chip { ALL, NOT_CLONED, CLONED }
 
     private var currentChip = Chip.ALL
 
@@ -265,8 +342,8 @@ class MainActivity : AppCompatActivity() {
 
         listOf(
             binding.chipAll to (chip == Chip.ALL),
-            binding.chipUser to (chip == Chip.USER),
-            binding.chipSystem to (chip == Chip.SYSTEM)
+            binding.chipUser to (chip == Chip.NOT_CLONED),
+            binding.chipSystem to (chip == Chip.CLONED)
         ).forEach { (view, selected) ->
             view.setBackgroundResource(
                 if (selected) R.drawable.bg_chip_on else R.drawable.bg_chip
@@ -284,15 +361,14 @@ class MainActivity : AppCompatActivity() {
                 app.packageName.contains(query, ignoreCase = true)
             val matchesChip = when (currentChip) {
                 Chip.ALL -> true
-                // The repository already drops FLAG_SYSTEM packages, so everything it
-                // returns is a user app. "System" therefore means "already cloned", which
-                // is the only other distinction the picker can honestly make.
-                Chip.USER -> !app.isInstall
-                Chip.SYSTEM -> app.isInstall
+                Chip.NOT_CLONED -> !app.isInstall
+                Chip.CLONED -> app.isInstall
             }
             matchesQuery && matchesChip
         }
         appAdapter.submit(filtered)
+        // The chips filter nothing when there is nothing to filter.
+        binding.appChips.visibility = if (allApps.isEmpty()) View.GONE else View.VISIBLE
         binding.appsEmpty.visibility =
             if (filtered.isEmpty() && allApps.isNotEmpty()) View.VISIBLE else View.GONE
     }
@@ -328,7 +404,7 @@ class MainActivity : AppCompatActivity() {
         binding.rowProxy.setOnClickListener {
             // The default proxy is edited through a clone's proxy screen; there is no
             // global proxy editor, so this row explains that rather than opening nothing.
-            toast(getString(R.string.proxy_none))
+            toast(getString(R.string.ui_no_global_proxy))
         }
         binding.rowGms.setOnClickListener { GmsManagerActivity.start(this) }
 
@@ -338,6 +414,16 @@ class MainActivity : AppCompatActivity() {
             keepAlive.setEnabled(checked)
         }
 
+        // The capture side gates on this same key, so the switch and the capture path
+        // cannot drift apart. Turning it off also drops the previews already on disk,
+        // otherwise the grid would keep showing screenshots the user just opted out of.
+        val prefs = getSharedPreferences("nexusclone", MODE_PRIVATE)
+        binding.switchPreview.isChecked = prefs.getBoolean("preview_capture_enabled", true)
+        binding.switchPreview.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("preview_capture_enabled", checked).apply()
+            if (!checked) previews.clearAll()
+        }
+
         binding.specVersion.text = runCatching {
             val info = packageManager.getPackageInfo(packageName, 0)
             "${info.versionName} (${info.longVersionCode})"
@@ -345,6 +431,43 @@ class MainActivity : AppCompatActivity() {
 
         binding.specDevice.text =
             "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · SDK ${android.os.Build.VERSION.SDK_INT}"
+
+        loadGmsSummary()
+    }
+
+    /**
+     * How many virtual users have Google services installed.
+     *
+     * Both calls in the loop are binder round-trips into :black, so they run off the main
+     * thread. A failure is not an error state: it just means the count is unknown.
+     */
+    private fun loadGmsSummary() {
+        lifecycleScope.launch {
+            val summary = try {
+                withContext(Dispatchers.IO) {
+                    val users = BlackBoxCore.get().users
+                    val withGms = users.count {
+                        try {
+                            BlackBoxCore.get().isInstallGms(it.id)
+                        } catch (e: Exception) {
+                            false
+                        }
+                    }
+                    withGms to users.size
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "gms summary failed: ${e.message}")
+                null
+            }
+
+            binding.subGms.text = if (summary != null && summary.first > 0) {
+                getString(R.string.ui_gms_installed_in, summary.first, summary.second)
+            } else {
+                getString(R.string.ui_gms_not_installed)
+            }
+        }
     }
 
     private fun refreshDiagnostics() {
@@ -352,29 +475,35 @@ class MainActivity : AppCompatActivity() {
             try {
                 val checks = withContext(Dispatchers.IO) { diag.runAll() }
                 lastChecks = checks
-                val passed = checks.count { it.ok }
-                val failed = checks.size - passed
-
-                binding.statusStrip.text.text =
-                    if (failed == 0) getString(R.string.nc_checks_passing)
-                    else getString(R.string.nc_checks_attention, failed)
-                binding.statusStrip.meta.text = "$passed/${checks.size}"
-                binding.statusStrip.dot.backgroundTintList = ContextCompat.getColorStateList(
-                    this@MainActivity,
-                    if (failed == 0) R.color.success else R.color.warn
-                )
-
-                binding.subDiagnostics.text =
-                    getString(R.string.nc_checks_summary, passed, checks.size)
-                binding.badgeDiagnostics.visibility =
-                    if (failed == 0) View.GONE else View.VISIBLE
-                binding.badgeDiagnostics.text = failed.toString()
+                lastChecksAt = System.currentTimeMillis()
+                renderStrip(checks)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 Log.w(TAG, "diagnostics sweep failed: ${e.message}")
             }
         }
+    }
+
+    /** Paint the status strip and the Settings badge from an already-run sweep. */
+    private fun renderStrip(checks: List<Check>) {
+        val passed = checks.count { it.ok }
+        val failed = checks.size - passed
+
+        binding.statusStrip.text.text =
+            if (failed == 0) getString(R.string.nc_checks_passing)
+            else getString(R.string.nc_checks_attention, failed)
+        binding.statusStrip.meta.text = "$passed/${checks.size}"
+        binding.statusStrip.dot.backgroundTintList = ContextCompat.getColorStateList(
+            this,
+            if (failed == 0) R.color.success else R.color.warn
+        )
+
+        binding.subDiagnostics.text =
+            getString(R.string.nc_checks_summary, passed, checks.size)
+        binding.badgeDiagnostics.visibility =
+            if (failed == 0) View.GONE else View.VISIBLE
+        binding.badgeDiagnostics.text = failed.toString()
     }
 
     // ---------------------------------------------------------------- fab + overflow
@@ -392,18 +521,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun showOverflow() {
         val items = arrayOf(
-            getString(R.string.diag_title),
-            getString(R.string.gms_manager),
-            getString(R.string.setting),
-            getString(R.string.fake_location)
+            getString(R.string.fake_location),
+            getString(R.string.ui_import_apk)
         )
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> DiagnosticsActivity.start(this)
-                    1 -> GmsManagerActivity.start(this)
-                    2 -> SettingActivity.start(this)
-                    3 -> FakeManagerActivity.start(this)
+                    0 -> FakeManagerActivity.start(this)
+                    1 -> importApk.launch(arrayOf("application/vnd.android.package-archive"))
                 }
             }
             .show()
@@ -417,6 +542,16 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             runCatching { manager.refresh() }
             if (currentTab == Tab.CLONES) updateClonesSubtitle()
+        }
+
+        // The sweep is a handful of binder round-trips. Re-running it on every return from
+        // a clone screen is wasted work, so a recent result is repainted instead.
+        if (lastChecks.isNotEmpty() &&
+            System.currentTimeMillis() - lastChecksAt < 60_000L
+        ) {
+            renderStrip(lastChecks)
+        } else {
+            refreshDiagnostics()
         }
     }
 
@@ -482,7 +617,7 @@ class MainActivity : AppCompatActivity() {
                 val resident = inst.state.isResident
                 b.liveBadge.visibility = if (resident) View.VISIBLE else View.GONE
                 b.stateBadge.visibility = if (resident) View.GONE else View.VISIBLE
-                b.stateBadge.text = stateLabel(inst.state)
+                b.stateBadge.text = stateLabel(this@MainActivity, inst.state)
 
                 bindPreview(inst)
 
@@ -551,7 +686,7 @@ class MainActivity : AppCompatActivity() {
             fun bind(app: InstalledAppBean) {
                 b.name.text = app.name
                 b.packageName.text = app.packageName
-                b.icon.setImageDrawable(iconFor(app))
+                b.icon.setImageDrawable(app.icon)
 
                 b.cloneCount.visibility = if (app.isInstall) View.VISIBLE else View.GONE
                 b.cloneCount.text = getString(R.string.nc_cloned)
@@ -561,13 +696,6 @@ class MainActivity : AppCompatActivity() {
                 b.btnClone.setOnClickListener(clone)
             }
         }
-    }
-
-    private fun iconFor(app: InstalledAppBean): Drawable? {
-        iconCache.get(app.packageName)?.let { return it }
-        val icon = app.icon
-        if (icon != null) iconCache.put(app.packageName, icon)
-        return icon
     }
 
     private fun createClone(packageName: String) {
@@ -604,16 +732,5 @@ class MainActivity : AppCompatActivity() {
             2 -> R.drawable.bg_clone_tint_3
             else -> R.drawable.bg_clone_tint_4
         }
-    }
-
-    private fun stateLabel(s: InstanceState): String = when (s) {
-        InstanceState.CREATED -> getString(R.string.state_created)
-        InstanceState.INSTALLED -> getString(R.string.state_installed)
-        InstanceState.COLD -> getString(R.string.state_cold)
-        InstanceState.WARM -> getString(R.string.state_warm)
-        InstanceState.FOREGROUND -> getString(R.string.state_foreground)
-        InstanceState.BACKGROUND -> getString(R.string.state_background)
-        InstanceState.FROZEN -> getString(R.string.state_frozen)
-        InstanceState.DEAD -> getString(R.string.state_dead)
     }
 }

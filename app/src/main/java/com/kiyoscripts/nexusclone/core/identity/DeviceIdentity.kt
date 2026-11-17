@@ -20,6 +20,9 @@ data class DeviceIdentity(
     val board: String,
     val hardware: String,
     val fingerprint: String,
+    val buildId: String = "",
+    val sdk: Int = 31,
+    val abi: String = "arm64-v8a",
     val androidId: String,
     val imei: String,
     val meid: String,
@@ -31,7 +34,9 @@ data class DeviceIdentity(
     val densityDpi: Int,
     val screenWidth: Int,
     val screenHeight: Int,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** Epoch millis of the last bind, 0 when the profile was never bound. */
+    val lastUsedAt: Long = 0L
 ) {
     /** Build.MODEL etc. as a map, for the diagnostics screen and the hook layer. */
     fun buildFields(): Map<String, String> = linkedMapOf(
@@ -56,12 +61,16 @@ data class DeviceIdentity(
     fun spoofedProperties(): Map<String, String> = linkedMapOf(
         "ro.product.brand" to brand,
         "ro.product.manufacturer" to manufacturer,
+        "ro.product.name" to product,
         "ro.product.model" to model,
         "ro.product.device" to device,
         "ro.product.board" to board,
         "ro.hardware" to hardware,
         "ro.boot.hardware" to hardware,
+        "ro.build.id" to buildId,
+        "ro.build.version.sdk" to sdk.toString(),
         "ro.build.fingerprint" to fingerprint,
+        "ro.product.cpu.abi" to abi,
         "ro.serialno" to serial
     )
 
@@ -103,26 +112,27 @@ object IdentityFactory {
         val release: String,
         val sdk: Int,
         val buildId: String,
-        val incremental: String
+        val incremental: String,
+        val abi: String = "arm64-v8a"
     )
 
     private val templates = listOf(
         Template("google", "Google", "Pixel 6", "oriole", "oriole",
-            "oriole", "oriole", "12", 31, "SP1A.210812.015", "7679548"),
+            "oriole", "oriole", "12", 31, "SP1A.210812.015", "7679548", "arm64-v8a"),
         Template("google", "Google", "Pixel 7", "panther", "panther",
-            "panther", "panther", "13", 33, "TQ1A.230205.002", "9471150"),
+            "panther", "panther", "13", 33, "TQ1A.230205.002", "9471150", "arm64-v8a"),
         Template("google", "Google", "Pixel 5", "redfin", "redfin",
-            "redfin", "redfin", "11", 30, "RQ3A.210805.001.A1", "7474174"),
+            "redfin", "redfin", "11", 30, "RQ3A.210805.001.A1", "7474174", "arm64-v8a"),
         Template("samsung", "samsung", "SM-G991B", "o1s", "o1sxxx",
-            "exynos2100", "exynos2100", "12", 31, "SP1A.210812.016", "G991BXXU3BUK8"),
+            "exynos2100", "exynos2100", "12", 31, "SP1A.210812.016", "G991BXXU3BUK8", "arm64-v8a"),
         Template("samsung", "samsung", "SM-S901B", "r0s", "r0sxxx",
-            "exynos2200", "exynos2200", "13", 33, "TP1A.220624.014", "S901BXXU1AVC6"),
+            "exynos2200", "exynos2200", "13", 33, "TP1A.220624.014", "S901BXXU1AVC6", "arm64-v8a"),
         Template("Xiaomi", "Xiaomi", "M2101K6G", "sweet", "sweet_global",
-            "atoll", "qcom", "12", 31, "SKQ1.211006.001", "V13.0.5.0.SKFMIXM"),
+            "atoll", "qcom", "12", 31, "SKQ1.211006.001", "V13.0.5.0.SKFMIXM", "arm64-v8a"),
         Template("OnePlus", "OnePlus", "LE2123", "OnePlus9Pro", "OnePlus9Pro_EEA",
-            "lahaina", "qcom", "12", 31, "RKQ1.211119.001", "c21da0e0"),
+            "lahaina", "qcom", "12", 31, "RKQ1.211119.001", "c21da0e0", "arm64-v8a"),
         Template("motorola", "motorola", "moto g(60)", "elish", "elish_retail",
-            "lahaina", "qcom", "12", 31, "S1RQS32.20-42-10-9", "b3a1a")
+            "lahaina", "qcom", "12", 31, "S1RQS32.20-42-10-9", "b3a1a", "arm64-v8a")
     )
 
     /** Generate a fresh identity. */
@@ -140,11 +150,14 @@ object IdentityFactory {
             board = t.board,
             hardware = t.hardware,
             fingerprint = fingerprint,
+            buildId = t.buildId,
+            sdk = t.sdk,
+            abi = t.abi,
             androidId = randomAndroidId(),
             imei = randomImei(),
             meid = randomMeid(),
             macWifi = randomMac(),
-            serial = randomSerial(),
+            serial = randomSerial(t.brand),
             gsfId = randomGsfId(),
             locale = "en-US",
             timezone = "UTC",
@@ -184,9 +197,30 @@ object IdentityFactory {
         return bytes.joinToString(":") { String.format(Locale.US, "%02X", it) }
     }
 
-    /** 12 alphanumeric chars, the serial format most vendors use. */
-    fun randomSerial(): String =
-        (1..12).map { ALNUM[rng.nextInt(ALNUM.length)] }.joinToString("")
+    /**
+     * A serial in the format the given vendor actually ships.
+     *
+     * A 12 char generic string matches no vendor, so it is a fingerprint on its own.
+     * Samsung uses an 11 char R prefix, Google 14 alnum, Xiaomi 12 alnum, OnePlus 16 hex
+     * and motorola 10 alnum. Unknown brands fall back to the generic 12 alnum shape.
+     */
+    fun randomSerial(brand: String): String = when (brand.lowercase(Locale.US)) {
+        "samsung" -> "R" + alnum(10)
+        "google" -> alnum(14)
+        "xiaomi" -> alnum(12)
+        "oneplus" -> hex(16)
+        "motorola" -> alnum(10)
+        else -> alnum(12)
+    }
+
+    /** Generic 12 alphanumeric serial, kept for callers that have no brand at hand. */
+    fun randomSerial(): String = randomSerial("generic")
+
+    private fun alnum(count: Int): String =
+        (1..count).map { ALNUM[rng.nextInt(ALNUM.length)] }.joinToString("")
+
+    private fun hex(count: Int): String =
+        (1..count).map { HEX[rng.nextInt(HEX.length)] }.joinToString("")
 
     /** 16 hex chars, the GSF ID format. */
     fun randomGsfId(): String =

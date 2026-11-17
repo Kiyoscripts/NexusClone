@@ -110,6 +110,15 @@ class KeepAliveController private constructor(private val context: Context) {
         serviceStarted = true
         schedulePulse()
         scheduleJob()
+        // The armed set just changed, so the per-clone level is now stale. Persist it on a
+        // worker: this runs from onStartCommand, which the framework times.
+        Thread({
+            try {
+                kotlinx.coroutines.runBlocking { refreshLevels() }
+            } catch (e: Throwable) {
+                Log.w(TAG, "refreshLevels failed: ${e.message}")
+            }
+        }, "nexus-keepalive-levels").start()
     }
 
     fun start() {
@@ -160,6 +169,15 @@ class KeepAliveController private constructor(private val context: Context) {
         } else {
             stop()
         }
+        // Turning the subsystem off drops every layer, so the stored level must drop with
+        // it or the clone screen keeps claiming layers that are no longer armed.
+        Thread({
+            try {
+                kotlinx.coroutines.runBlocking { refreshLevels() }
+            } catch (e: Throwable) {
+                Log.w(TAG, "refreshLevels failed: ${e.message}")
+            }
+        }, "nexus-keepalive-levels").start()
     }
 
     fun isEnabled(): Boolean = KeepAlivePrefs.isEnabled(context)
@@ -267,10 +285,24 @@ class KeepAliveController private constructor(private val context: Context) {
         Uri.parse("package:${context.packageName}")
     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    /** Recompute and persist the keep-alive level for every instance. */
+    /**
+     * Recompute and persist the keep-alive level for every instance.
+     *
+     * This had zero callers, so Instance.keepAliveLevel stayed 0 forever and the clone
+     * detail screen always reported "level 0" no matter how many layers were actually
+     * armed. It is now called from [onServiceStarted] and [setEnabled], which are the two
+     * moments the armed set can change.
+     *
+     * The write goes through InstanceManager.syncKeepAliveLevels, which reads the table
+     * once and updates only the rows that differ, instead of one full-row write per clone.
+     */
     suspend fun refreshLevels() {
         val level = strength()
-        manager.snapshot().forEach { manager.setKeepAliveLevel(it.id, level) }
+        try {
+            manager.syncKeepAliveLevels(level)
+        } catch (e: Throwable) {
+            Log.w(TAG, "could not persist keep-alive level $level: ${e.message}")
+        }
     }
 
     /** Schedule the resurrection pulse. */

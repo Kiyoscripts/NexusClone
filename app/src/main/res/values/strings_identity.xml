@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Summary line states, so the user can tell a live binding from a saved profile. -->
+    <string name="id_bound_to_clone">Bound to this clone: %1$s</string>
+    <string name="id_saved_unbound">Saved, not bound to this clone: %1$s</string>
+
+    <!-- Long press delete. -->
+    <string name="id_delete_confirm">Delete %1$s? It will be unbound from every clone that uses it.</string>
+    <string name="id_delete">Delete</string>
+    <string name="id_cancel">Cancel</string>
+    <string name="id_deleted">Deleted %1$s</string>
+
+    <!-- Bind results, reported only after the write completes. -->
+    <string name="id_apply_failed">Could not bind identity</string>
+    <string name="id_clear_failed">Could not clear identity</string>
+
+    <!-- Expanded tuple, one label per line. -->
+    <string name="id_full_tuple">brand: %1$s\nmodel: %2$s\ndevice: %3$s\nfingerprint: %4$s\nandroidId: %5$s\nimei: %6$s\nmeid: %7$s\nmac: %8$s\nserial: %9$s\ngsfId: %10$s\nsdk: %11$d\nabi: %12$s</string>
+
+</resources>

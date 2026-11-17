@@ -62,7 +62,6 @@
             android:visibility="gone">
 
             <View
-                android:id="@+id/liveDot"
                 android:layout_width="5dp"
                 android:layout_height="5dp"
                 android:background="@drawable/bg_dot"

@@ -20,7 +20,7 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
     companion object {
         private const val TAG = "InstanceStore"
         private const val DB_NAME = "nexus_instances.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
 
         const val TABLE = "instances"
 
@@ -32,6 +32,7 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
         private const val COL_CREATED = "created_at"
         private const val COL_LAST_LAUNCH = "last_launch_at"
         private const val COL_DATA_SIZE = "data_size"
+        private const val COL_LAST_SIZE = "last_size_at"
         private const val COL_QUOTA = "quota_bytes"
         private const val COL_PREVIEW = "preview_path"
         private const val COL_PREVIEW_AT = "preview_updated_at"
@@ -53,6 +54,7 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
                 $COL_CREATED INTEGER NOT NULL,
                 $COL_LAST_LAUNCH INTEGER NOT NULL DEFAULT 0,
                 $COL_DATA_SIZE INTEGER NOT NULL DEFAULT 0,
+                $COL_LAST_SIZE INTEGER NOT NULL DEFAULT 0,
                 $COL_QUOTA INTEGER NOT NULL DEFAULT 0,
                 $COL_PREVIEW TEXT,
                 $COL_PREVIEW_AT INTEGER NOT NULL DEFAULT 0,
@@ -80,12 +82,46 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         Log.i(TAG, "onUpgrade $oldVersion -> $newVersion")
         when (oldVersion) {
-            // Version 1 is the initial schema; there is nothing to migrate from it yet.
-            1 -> Unit
+            1 -> migrateV1toV2(db)
             // Future versions append their step here, e.g.
             // 2 -> db.execSQL("ALTER TABLE $TABLE ADD COLUMN ...")
             else -> Log.w(TAG, "no migration path from $oldVersion, schema left as is")
         }
+    }
+
+    /**
+     * v1 -> v2: add the persisted size-walk stamp.
+     *
+     * The column is added only when it is absent. A device that installed a build which
+     * already created the column (or a database restored from a newer backup) would
+     * otherwise fail the ALTER with "duplicate column name", and a throw inside
+     * onUpgrade leaves the helper in a state where every later open retries the same
+     * failing migration. The check plus the catch keeps the upgrade idempotent.
+     */
+    private fun migrateV1toV2(db: SQLiteDatabase) {
+        if (columnExists(db, TABLE, COL_LAST_SIZE)) {
+            Log.i(TAG, "$COL_LAST_SIZE already present, skipping v1 -> v2")
+            return
+        }
+        try {
+            db.execSQL(
+                "ALTER TABLE $TABLE ADD COLUMN $COL_LAST_SIZE INTEGER NOT NULL DEFAULT 0"
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "v1 -> v2 add $COL_LAST_SIZE failed: ${e.message}")
+        }
+    }
+
+    /** True when [table] already has a column named [column]. */
+    private fun columnExists(db: SQLiteDatabase, table: String, column: String): Boolean {
+        db.rawQuery("PRAGMA table_info($table)", null).use { c ->
+            val nameIdx = c.getColumnIndex("name")
+            if (nameIdx < 0) return false
+            while (c.moveToNext()) {
+                if (c.getString(nameIdx) == column) return true
+            }
+        }
+        return false
     }
 
     /**
@@ -109,6 +145,7 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
             put(COL_CREATED, instance.createdAt)
             put(COL_LAST_LAUNCH, instance.lastLaunchAt)
             put(COL_DATA_SIZE, instance.dataSizeBytes)
+            put(COL_LAST_SIZE, instance.lastSizeAt)
             put(COL_QUOTA, instance.quotaBytes)
             put(COL_PREVIEW, instance.previewPath)
             put(COL_PREVIEW_AT, instance.previewUpdatedAt)
@@ -133,6 +170,7 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
             put(COL_STATE, instance.state.name)
             put(COL_LAST_LAUNCH, instance.lastLaunchAt)
             put(COL_DATA_SIZE, instance.dataSizeBytes)
+            put(COL_LAST_SIZE, instance.lastSizeAt)
             put(COL_QUOTA, instance.quotaBytes)
             put(COL_PREVIEW, instance.previewPath)
             put(COL_PREVIEW_AT, instance.previewUpdatedAt)
@@ -154,6 +192,15 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
             TABLE, "$COL_USER_ID = ? AND $COL_PKG = ?",
             arrayOf(userId.toString(), packageName)
         )
+
+    /**
+     * Delete every row in [state] and report how many were removed.
+     *
+     * Used to sweep DEAD rows. A DEAD row is a clone whose uninstall succeeded but whose
+     * delete did not, so it must be removable in bulk without touching the live rows.
+     */
+    fun deleteByState(state: InstanceState): Int =
+        writableDatabase.delete(TABLE, "$COL_STATE = ?", arrayOf(state.name))
 
     fun all(): List<CloneInstance> = query(null, null)
 
@@ -199,6 +246,7 @@ class InstanceStore(context: Context) : SQLiteOpenHelper(
                         createdAt = c.getLong(c.getColumnIndexOrThrow(COL_CREATED)),
                         lastLaunchAt = c.getLong(c.getColumnIndexOrThrow(COL_LAST_LAUNCH)),
                         dataSizeBytes = c.getLong(c.getColumnIndexOrThrow(COL_DATA_SIZE)),
+                        lastSizeAt = c.getLong(c.getColumnIndexOrThrow(COL_LAST_SIZE)),
                         quotaBytes = c.getLong(c.getColumnIndexOrThrow(COL_QUOTA)),
                         previewPath = c.getString(c.getColumnIndexOrThrow(COL_PREVIEW)),
                         previewUpdatedAt = c.getLong(c.getColumnIndexOrThrow(COL_PREVIEW_AT)),

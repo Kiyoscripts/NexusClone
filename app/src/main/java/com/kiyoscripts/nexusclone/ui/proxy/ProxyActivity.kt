@@ -69,9 +69,9 @@ class ProxyActivity : AppCompatActivity() {
 
         binding.btnBack.setOnClickListener { finish() }
 
-        binding.segSocks.setOnClickListener { selectType(ProxyType.SOCKS5) }
+        binding.segSocks5.setOnClickListener { selectType(ProxyType.SOCKS5) }
+        binding.segSocks4.setOnClickListener { selectType(ProxyType.SOCKS4) }
         binding.segHttp.setOnClickListener { selectType(ProxyType.HTTP) }
-        binding.segHttps.setOnClickListener { selectType(ProxyType.HTTP) }
 
         binding.switchEnabled.setOnCheckedChangeListener { _, on ->
             setFieldsEnabled(on)
@@ -84,40 +84,57 @@ class ProxyActivity : AppCompatActivity() {
         load()
     }
 
+    /**
+     * Read the current binding.
+     *
+     * The manager snapshot is a cache, so reading it without a refresh shows whatever the
+     * last screen left behind. Refresh first, then read, both off the main thread because
+     * refresh hits the instance database and byId hits the proxy database.
+     */
     private fun load() {
-        val inst = manager.byId(instanceId)
-        binding.subtitle.text = inst?.let { "${it.label} · ${it.packageName}" } ?: ""
+        lifecycleScope.launch {
+            val (inst, bound) = withContext(Dispatchers.IO) {
+                runCatching { manager.refresh() }
+                    .onFailure { Log.w(TAG, "could not refresh instances: ${it.message}") }
+                val current = manager.byId(instanceId)
+                current to current?.proxyId?.let { store.byId(it) }
+            }
 
-        val bound = inst?.proxyId?.let { store.byId(it) }
-        if (bound == null) {
-            binding.switchEnabled.isChecked = false
-            setFieldsEnabled(false)
-            selectType(ProxyType.SOCKS5)
-            return
+            binding.subtitle.text = inst?.let { "${it.label} · ${it.packageName}" } ?: ""
+
+            if (bound == null) {
+                binding.switchEnabled.isChecked = false
+                setFieldsEnabled(false)
+                selectType(ProxyType.SOCKS5)
+                return@launch
+            }
+
+            profileId = bound.id
+            binding.switchEnabled.isChecked = bound.enabled
+            binding.host.setText(bound.host)
+            binding.port.setText(bound.port.toString())
+            binding.user.setText(bound.username ?: "")
+            binding.pass.setText(bound.password ?: "")
+            binding.name.setText(bound.name)
+            selectType(bound.type)
+            setFieldsEnabled(bound.enabled)
         }
-
-        profileId = bound.id
-        binding.switchEnabled.isChecked = bound.enabled
-        binding.host.setText(bound.host)
-        binding.port.setText(bound.port.toString())
-        binding.user.setText(bound.username ?: "")
-        binding.pass.setText(bound.password ?: "")
-        binding.name.setText(bound.name)
-        selectType(bound.type)
-        setFieldsEnabled(bound.enabled)
     }
 
+    /**
+     * One segment per protocol, one protocol per segment. The previous version mapped both
+     * the HTTP and the HTTPS segment to ProxyType.HTTP, so picking HTTP lit two segments
+     * and the control could not express SOCKS4 at all.
+     */
     private fun selectType(next: ProxyType) {
         type = next
         val on = ContextCompat.getColor(this, R.color.text_primary)
         val off = ContextCompat.getColor(this, R.color.text_secondary)
 
-        // SOCKS4 has no segment: it is a legacy protocol that no proxy provider still
-        // sells, and offering it would be a third button that never gets used.
         listOf(
-            binding.segSocks to (next == ProxyType.SOCKS5),
-            binding.segHttp to (next == ProxyType.HTTP),
-            binding.segHttps to (next == ProxyType.HTTP)
+            binding.segSocks5 to (next == ProxyType.SOCKS5),
+            binding.segSocks4 to (next == ProxyType.SOCKS4),
+            binding.segHttp to (next == ProxyType.HTTP)
         ).forEach { (view, selected) ->
             view.setBackgroundResource(
                 if (selected) R.drawable.bg_segment_on else 0
@@ -126,15 +143,21 @@ class ProxyActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Gate the fields behind the master switch, but never the test button: probing an
+     * endpoint before committing to it is the whole point of having a test button.
+     */
     private fun setFieldsEnabled(enabled: Boolean) {
         val alpha = if (enabled) 1f else 0.45f
         listOf<View>(
             binding.host, binding.port, binding.user, binding.pass,
-            binding.name, binding.typeGroup, binding.btnTest
+            binding.name, binding.typeGroup
         ).forEach {
             it.isEnabled = enabled
             it.alpha = alpha
         }
+        binding.btnTest.isEnabled = true
+        binding.btnTest.alpha = 1f
     }
 
     private fun showError(message: String?) {
@@ -190,8 +213,7 @@ class ProxyActivity : AppCompatActivity() {
                 throw e
             } catch (e: Throwable) {
                 Log.w(TAG, "could not bind proxy: ${e.message}")
-                toast(getString(R.string.proxy_saved))
-                finish()
+                toast(getString(R.string.net_proxy_save_failed, e.message ?: e.javaClass.simpleName))
             }
         }
     }
@@ -242,21 +264,45 @@ class ProxyActivity : AppCompatActivity() {
             binding.btnTest.text = getString(R.string.nc_test)
 
             if (reachable) {
-                toast("$host:$port reachable in ${elapsed}ms")
+                if (profileId != 0L) {
+                    withContext(Dispatchers.IO) {
+                        runCatching { store.markOk(profileId) }
+                            .onFailure { Log.w(TAG, "could not record probe: ${it.message}") }
+                    }
+                }
+                toast(getString(R.string.net_proxy_reachable, "$host:$port", elapsed))
             } else {
-                showError("$host:$port did not accept a connection")
+                showError(getString(R.string.net_proxy_unreachable, "$host:$port"))
             }
         }
     }
 
+    /**
+     * Unbind this clone, and delete the profile only when nothing else still points at it.
+     *
+     * A profile can be shared: cloning a clone copies its proxyId. Deleting the row while
+     * another clone still references it would leave that clone pointing at a missing row,
+     * which reads back as "no proxy" and silently drops its egress path.
+     */
     private fun clear() {
-        if (profileId != 0L) {
-            store.delete(profileId)
-            profileId = 0L
-        }
+        val id = profileId
         lifecycleScope.launch {
+            val refs = withContext(Dispatchers.IO) {
+                if (id == 0L) 0 else manager.snapshot().count { it.proxyId == id }
+            }
+
+            if (id != 0L && refs <= 1) {
+                withContext(Dispatchers.IO) { runCatching { store.delete(id) } }
+                profileId = 0L
+            }
+
             runCatching { manager.setProxy(instanceId, null) }
-            toast(getString(R.string.proxy_none))
+                .onFailure { Log.w(TAG, "could not unbind proxy: ${it.message}") }
+
+            toast(
+                if (id != 0L && refs > 1) getString(R.string.net_proxy_kept_shared)
+                else getString(R.string.proxy_none)
+            )
             finish()
         }
     }

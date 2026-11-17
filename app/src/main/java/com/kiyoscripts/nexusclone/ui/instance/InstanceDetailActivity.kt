@@ -2,6 +2,7 @@ package com.kiyoscripts.nexusclone.ui.instance
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -18,7 +19,9 @@ import com.kiyoscripts.nexusclone.core.identity.IdentityStore
 import com.kiyoscripts.nexusclone.core.instance.CloneInstance
 import com.kiyoscripts.nexusclone.core.instance.InstanceState
 import com.kiyoscripts.nexusclone.core.instance.InstanceManager
+import com.kiyoscripts.nexusclone.core.macro.MacroStore
 import com.kiyoscripts.nexusclone.core.net.ProxyStore
+import com.kiyoscripts.nexusclone.core.preview.PreviewCache
 import com.kiyoscripts.nexusclone.databinding.ActivityInstanceDetailBinding
 import com.kiyoscripts.nexusclone.ui.diag.DiagnosticsActivity
 import com.kiyoscripts.nexusclone.ui.identity.IdentityActivity
@@ -26,7 +29,10 @@ import com.kiyoscripts.nexusclone.ui.macro.MacroActivity
 import com.kiyoscripts.nexusclone.ui.proxy.ProxyActivity
 import com.kiyoscripts.nexusclone.util.toast
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Per-clone control panel.
@@ -59,6 +65,8 @@ class InstanceDetailActivity : AppCompatActivity() {
     private lateinit var diag: Diagnostics
     private lateinit var proxyStore: ProxyStore
     private lateinit var identityStore: IdentityStore
+    private lateinit var previews: PreviewCache
+    private lateinit var macros: MacroStore
 
     /**
      * One controller for the whole Activity lifetime.
@@ -73,6 +81,9 @@ class InstanceDetailActivity : AppCompatActivity() {
     private var instanceId: Long = 0L
     private var current: CloneInstance? = null
 
+    /** True while launch or stop is in flight, so a double tap cannot queue two intents. */
+    private var busy = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityInstanceDetailBinding.inflate(layoutInflater)
@@ -84,6 +95,8 @@ class InstanceDetailActivity : AppCompatActivity() {
         diag = Diagnostics(this)
         proxyStore = ProxyStore(this)
         identityStore = IdentityStore(this)
+        previews = PreviewCache(this)
+        macros = MacroStore(this)
         floatingWindow = FloatingWindowController(this)
 
         binding.btnBack.setOnClickListener { finish() }
@@ -110,6 +123,21 @@ class InstanceDetailActivity : AppCompatActivity() {
                 return@launch
             }
             bind(inst)
+
+            // The size line reads dataSizeBytes, which is only ever written by a directory
+            // walk. Nothing called that walk, so every clone reported "0 B" forever. The
+            // stale-guarded variant keeps this cheap on a screen the user re-enters often.
+            try {
+                manager.refreshSizesIfStale()
+                manager.byId(instanceId)?.let { fresh ->
+                    current = fresh
+                    binding.sizeLine.text = formatBytes(fresh.dataSizeBytes)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "size walk failed: ${e.message}")
+            }
         }
     }
 
@@ -122,7 +150,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         binding.statePillText.text = if (resident) {
             getString(R.string.nc_running)
         } else {
-            stateLabel(inst.state)
+            stateLabel(this, inst.state)
         }
         val pillColor = if (resident) R.color.success else R.color.text_secondary
         val pillSoft = if (resident) R.color.success_soft else R.color.surface_raised
@@ -146,13 +174,13 @@ class InstanceDetailActivity : AppCompatActivity() {
         binding.subIdentity.text = identity?.let { "${it.model} · ${it.brand}" }
             ?: getString(R.string.identity_none)
 
-        binding.subSnapshot.text = if (inst.previewUpdatedAt > 0L) {
-            "Last saved " + relativeTime(inst.previewUpdatedAt)
-        } else {
-            getString(R.string.no_snapshots)
-        }
+        binding.subSnapshot.text = getString(R.string.no_snapshots)
 
         binding.subMacro.text = ""
+
+        loadHeroPreview(inst)
+        loadSnapshotLine(inst)
+        loadMacroLine(inst)
 
         binding.btnFreezeLabel.text = if (inst.frozen) {
             getString(R.string.instance_unfreeze)
@@ -172,19 +200,115 @@ class InstanceDetailActivity : AppCompatActivity() {
         binding.specSerial.text = identity?.serial ?: "-"
     }
 
+    /**
+     * Hero preview.
+     *
+     * Decoded off the main thread and applied only if the tag still matches, the same
+     * guard the clone grid uses: a reload can land while a decode is in flight.
+     */
+    private fun loadHeroPreview(inst: CloneInstance) {
+        val file: File? = previews.existingFile(inst)
+        if (file == null) {
+            binding.heroImage.tag = null
+            binding.heroImage.setImageDrawable(null)
+            binding.heroImage.visibility = View.GONE
+            binding.heroGlyph.visibility = View.VISIBLE
+            return
+        }
+
+        val tag = file.absolutePath + "@" + inst.previewUpdatedAt
+        if (binding.heroImage.tag == tag) return
+        binding.heroImage.tag = tag
+
+        lifecycleScope.launch {
+            val bmp = withContext(Dispatchers.IO) {
+                BitmapFactory.decodeFile(file.absolutePath)
+            }
+            if (binding.heroImage.tag != tag) return@launch
+            if (bmp != null) {
+                binding.heroImage.setImageBitmap(bmp)
+                binding.heroImage.visibility = View.VISIBLE
+                binding.heroGlyph.visibility = View.GONE
+            } else {
+                binding.heroImage.visibility = View.GONE
+                binding.heroGlyph.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    /** When this clone was last snapshotted, from the newest archive on disk. */
+    private fun loadSnapshotLine(inst: CloneInstance) {
+        lifecycleScope.launch {
+            val newest = try {
+                withContext(Dispatchers.IO) { snapshots.newestFor(inst) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "snapshot lookup failed: ${e.message}")
+                null
+            }
+
+            binding.subSnapshot.text = if (newest == null) {
+                getString(R.string.no_snapshots)
+            } else {
+                getString(R.string.ui_snapshot_last_saved, relativeTime(newest.lastModified()))
+            }
+        }
+    }
+
+    /** How many macros are recorded for this clone. */
+    private fun loadMacroLine(inst: CloneInstance) {
+        lifecycleScope.launch {
+            val count = try {
+                withContext(Dispatchers.IO) {
+                    macros.forInstance(inst.userId, inst.packageName).size
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "macro count failed: ${e.message}")
+                0
+            }
+
+            binding.subMacro.text =
+                if (count > 0) getString(R.string.ui_macro_count, count) else ""
+        }
+    }
+
     private fun wireActions() {
         binding.btnLaunch.setOnClickListener {
+            if (busy) return@setOnClickListener
             lifecycleScope.launch {
-                manager.launch(instanceId)
-                    .onFailure { toast(getString(R.string.launch_failed, it.message ?: "unknown")) }
-                reload()
+                setBusy(true)
+                try {
+                    manager.launch(instanceId).onFailure {
+                        toast(getString(R.string.launch_failed, it.message ?: "unknown"))
+                    }
+                    reload()
+                } finally {
+                    setBusy(false)
+                }
             }
         }
 
         binding.btnStop.setOnClickListener {
+            if (busy) return@setOnClickListener
             lifecycleScope.launch {
-                manager.stop(instanceId)
-                reload()
+                setBusy(true)
+                try {
+                    manager.stop(instanceId).onFailure {
+                        toast(
+                            getString(
+                                R.string.ui_action_failed,
+                                getString(R.string.nc_stop),
+                                it.message ?: "unknown"
+                            )
+                        )
+                    }
+                    reload()
+                } finally {
+                    setBusy(false)
+                }
             }
         }
 
@@ -279,7 +403,15 @@ class InstanceDetailActivity : AppCompatActivity() {
                 .setMessage(R.string.confirm_clear)
                 .setPositiveButton(R.string.ok) { _, _ ->
                     lifecycleScope.launch {
-                        manager.clearData(instanceId)
+                        manager.clearData(instanceId).onFailure {
+                            toast(
+                                getString(
+                                    R.string.ui_action_failed,
+                                    getString(R.string.nc_clear_data),
+                                    it.message ?: "unknown"
+                                )
+                            )
+                        }
                         reload()
                     }
                 }
@@ -292,13 +424,39 @@ class InstanceDetailActivity : AppCompatActivity() {
                 .setMessage(R.string.confirm_delete)
                 .setPositiveButton(R.string.ok) { _, _ ->
                     lifecycleScope.launch {
-                        manager.destroy(instanceId)
-                        finish()
+                        manager.destroy(instanceId).fold(
+                            onSuccess = { finish() },
+                            onFailure = {
+                                // Staying on the screen is the point: the clone is still
+                                // there, so leaving would hide the failure.
+                                toast(
+                                    getString(
+                                        R.string.ui_action_failed,
+                                        getString(R.string.nc_delete_clone),
+                                        it.message ?: "unknown"
+                                    )
+                                )
+                            }
+                        )
                     }
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
+    }
+
+    /**
+     * Gate the two primary verbs.
+     *
+     * Launch and stop both go through the engine and both take seconds. Without this a
+     * double tap queues two intents against the same user, and the second one fails with
+     * a message the user did not cause.
+     */
+    private fun setBusy(on: Boolean) {
+        busy = on
+        binding.btnLaunch.isEnabled = !on
+        binding.btnStop.isEnabled = !on
+        binding.actionProgress.visibility = if (on) View.VISIBLE else View.GONE
     }
 
     private fun showOverflow() {
@@ -369,32 +527,33 @@ class InstanceDetailActivity : AppCompatActivity() {
     }
 
     private fun formatBytes(bytes: Long): String = when {
-        bytes <= 0L -> "0 B"
-        bytes < 1024L -> "$bytes B"
-        bytes < 1024L * 1024L -> "${bytes / 1024} KB"
-        bytes < 1024L * 1024L * 1024L -> "${bytes / (1024 * 1024)} MB"
-        else -> String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+        bytes <= 0L -> getString(R.string.ui_bytes, 0L)
+        bytes < 1024L -> getString(R.string.ui_bytes, bytes)
+        bytes < 1024L * 1024L -> getString(R.string.ui_kb, bytes / 1024)
+        bytes < 1024L * 1024L * 1024L -> getString(R.string.ui_mb, bytes / (1024 * 1024))
+        else -> getString(R.string.ui_gb, bytes / (1024.0 * 1024.0 * 1024.0))
     }
 
     private fun relativeTime(epochMillis: Long): String {
         val delta = System.currentTimeMillis() - epochMillis
         val minutes = delta / 60_000L
         return when {
-            minutes < 1 -> "just now"
-            minutes < 60 -> "$minutes min ago"
-            minutes < 60 * 24 -> "${minutes / 60} h ago"
-            else -> "${minutes / (60 * 24)} d ago"
+            minutes < 1 -> getString(R.string.ui_time_just_now)
+            minutes < 60 -> getString(R.string.ui_time_minutes_ago, minutes)
+            minutes < 60 * 24 -> getString(R.string.ui_time_hours_ago, minutes / 60)
+            else -> getString(R.string.ui_time_days_ago, minutes / (60 * 24))
         }
     }
+}
 
-    private fun stateLabel(s: InstanceState): String = when (s) {
-        InstanceState.CREATED -> getString(R.string.state_created)
-        InstanceState.INSTALLED -> getString(R.string.state_installed)
-        InstanceState.COLD -> getString(R.string.state_cold)
-        InstanceState.WARM -> getString(R.string.state_warm)
-        InstanceState.FOREGROUND -> getString(R.string.state_foreground)
-        InstanceState.BACKGROUND -> getString(R.string.state_background)
-        InstanceState.FROZEN -> getString(R.string.state_frozen)
-        InstanceState.DEAD -> getString(R.string.state_dead)
-    }
+/** Human label for a clone state. Shared with the clone grid in MainActivity. */
+internal fun stateLabel(context: Context, s: InstanceState): String = when (s) {
+    InstanceState.CREATED -> context.getString(R.string.state_created)
+    InstanceState.INSTALLED -> context.getString(R.string.state_installed)
+    InstanceState.COLD -> context.getString(R.string.state_cold)
+    InstanceState.WARM -> context.getString(R.string.state_warm)
+    InstanceState.FOREGROUND -> context.getString(R.string.state_foreground)
+    InstanceState.BACKGROUND -> context.getString(R.string.state_background)
+    InstanceState.FROZEN -> context.getString(R.string.state_frozen)
+    InstanceState.DEAD -> context.getString(R.string.state_dead)
 }

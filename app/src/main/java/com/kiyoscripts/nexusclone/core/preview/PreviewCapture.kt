@@ -90,6 +90,17 @@ object PreviewCapture {
                 { result ->
                     if (!settled.compareAndSet(false, true)) return@request
                     if (result == PixelCopy.SUCCESS) {
+                        // PixelCopy can report SUCCESS against a surface that was torn down
+                        // between the request and this callback, in which case the bitmap
+                        // holds a blank or partially drawn frame. Writing that would
+                        // replace a good thumbnail with a black rectangle, so check the
+                        // surface is still usable before touching the cache.
+                        if (!isSurfaceUsable(window, decor)) {
+                            Log.w(TAG, "surface went away before the copy landed")
+                            raw.recycle()
+                            onDone(false)
+                            return@request
+                        }
                         val ok = writeThumb(raw, outFile)
                         raw.recycle()
                         onDone(ok)
@@ -110,6 +121,25 @@ object PreviewCapture {
             Log.w(TAG, "PixelCopy threw: ${e.message}")
             raw.recycle()
             onDone(false)
+        }
+    }
+
+    /**
+     * True when [decor] still has a live, visible surface to have copied from.
+     *
+     * A detached or zero-sized decor means the window is gone, and a copy taken from it is
+     * not a picture of anything.
+     */
+    private fun isSurfaceUsable(window: Window, decor: View): Boolean {
+        return try {
+            decor.isAttachedToWindow &&
+                decor.windowVisibility == View.VISIBLE &&
+                decor.width > 0 &&
+                decor.height > 0 &&
+                window.peekDecorView() === decor
+        } catch (e: Exception) {
+            Log.w(TAG, "surface check failed: ${e.message}")
+            false
         }
     }
 

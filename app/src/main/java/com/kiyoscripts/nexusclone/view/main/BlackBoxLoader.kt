@@ -3,6 +3,7 @@ package com.kiyoscripts.nexusclone.view.main
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import android.view.View
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.app.BActivityThread
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback
@@ -10,9 +11,13 @@ import top.niunaijun.blackbox.app.configuration.ClientConfiguration
 import com.kiyoscripts.nexusclone.app.App
 import com.kiyoscripts.nexusclone.app.rocker.RockerManager
 import com.kiyoscripts.nexusclone.biz.cache.AppSharedPreferenceDelegate
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.Collections
+import java.util.WeakHashMap
 
 /**
  *
@@ -194,23 +199,37 @@ class BlackBoxLoader {
                         try {
                             val decor = activity.window?.decorView
                             if (decor != null) {
-                                // Publish the view so macro replay has a real target, and
-                                // feed the recorder from the guest's own touch stream. The
-                                // recorder is a no-op unless a recording is active, so this
-                                // costs a null check per event in the common case.
+                                // Publish the view so macro replay has a real target. This is
+                                // idempotent and must happen on every resume, because the
+                                // decor can be a different instance after a configuration
+                                // change.
                                 com.kiyoscripts.nexusclone.core.macro.MacroRecorder
                                     .attachGuestView(decor)
-                                decor.setOnTouchListener { v, ev ->
-                                    com.kiyoscripts.nexusclone.core.macro.MacroRecorder
-                                        .feed(ev, v)
-                                    false
+
+                                // Install the touch hook at most once per decor view.
+                                //
+                                // onActivityResumed fires on every resume, and the guest may
+                                // have installed its own decor touch listener in between.
+                                // Re-installing unconditionally would silently replace that
+                                // listener on the second resume, so the hook is guarded by a
+                                // registry keyed on the view itself. A WeakHashMap is used
+                                // rather than View.setTag because setTag(int, Object)
+                                // rejects any key that is not an application resource id, and
+                                // setTag(Object) would clobber a tag the guest may own.
+                                if (hookedDecor[decor] == null) {
+                                    hookedDecor[decor] = true
+                                    decor.setOnTouchListener { v, ev ->
+                                        com.kiyoscripts.nexusclone.core.macro.MacroRecorder
+                                            .feed(ev, v)
+                                        false
+                                    }
                                 }
                             }
                         } catch (e: Exception) {
                             Log.w(TAG, "macro touch hook failed for $pkg: ${e.message}")
                         }
 
-                        GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        scope.launch {
                             com.kiyoscripts.nexusclone.core.instance.InstanceManager
                                 .get(activity.applicationContext)
                                 .onGuestResumed(pkg, uid)
@@ -231,14 +250,14 @@ class BlackBoxLoader {
                         // destroyed and PixelCopy returns ERROR_SOURCE_INVALID. Doing it
                         // inside the coroutine would race the surface teardown.
                         try {
-                            com.kiyoscripts.nexusclone.core.preview.PreviewCache(
-                                activity.applicationContext
-                            ).captureGuest(activity, pkg, uid)
+                            com.kiyoscripts.nexusclone.core.preview.PreviewCache
+                                .get(activity.applicationContext)
+                                .captureGuest(activity, pkg, uid)
                         } catch (e: Exception) {
                             Log.w(TAG, "preview capture failed for $pkg: ${e.message}")
                         }
 
-                        GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        scope.launch {
                             com.kiyoscripts.nexusclone.core.instance.InstanceManager
                                 .get(activity.applicationContext)
                                 .onGuestPaused(pkg, uid)
@@ -293,18 +312,19 @@ class BlackBoxLoader {
                 }
 
                 override fun requestInstallPackage(file: File?, userId: Int): Boolean {
-                    return try {
-                        if (file == null) {
-                            Log.w(TAG, "requestInstallPackage: file is null")
-                            return false
-                        }
-                        val packageInfo =
-                            context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)
-                        false
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in requestInstallPackage: ${e.message}")
-                        false
+                    // Always false, and that is the whole point of this override.
+                    //
+                    // The return value means "handled, do not forward to the real
+                    // installer". Returning true here would swallow every install request
+                    // the guest makes, so no guest could ever install an apk. False lets the
+                    // engine's own install path run, which is what we want; this override
+                    // exists only so the hook is visible and can log.
+                    if (file == null) {
+                        Log.w(TAG, "requestInstallPackage: file is null")
+                    } else {
+                        Log.d(TAG, "requestInstallPackage: $file for user $userId")
                     }
+                    return false
                 }
             })
         } catch (e: Exception) {
@@ -317,7 +337,7 @@ class BlackBoxLoader {
      *
      * This is a blocking call: [BlackBoxCore.doCreate] probes the `:black` provider with
      * retries and then makes a binder round-trip per service, which can take tens of seconds
-     * on a cold start. It must never be called from the main thread — `App.onCreate()` runs
+     * on a cold start. It must never be called from the main thread: `App.onCreate()` runs
      * it on the "nexus-engine-init" thread and publishes readiness through
      * `AppManager.awaitEngineReady()`.
      *
@@ -346,5 +366,24 @@ class BlackBoxLoader {
 
     companion object {
         val TAG: String = BlackBoxLoader::class.java.simpleName
+
+        /**
+         * Application-scoped worker for the guest lifecycle callbacks.
+         *
+         * These used to be GlobalScope launches, which is a scope with no owner and no
+         * cancellation: work started there outlives the process's own lifecycle and cannot
+         * be stopped. A SupervisorJob keeps one failed guest callback from cancelling the
+         * rest, and the scope lives as long as the process, which is exactly the lifetime
+         * these callbacks need.
+         */
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /**
+         * Decor views that already carry the macro touch hook.
+         *
+         * Weak keys so a guest activity that goes away does not pin its decor view here.
+         */
+        private val hookedDecor: MutableMap<View, Boolean> =
+            Collections.synchronizedMap(WeakHashMap<View, Boolean>())
     }
 }

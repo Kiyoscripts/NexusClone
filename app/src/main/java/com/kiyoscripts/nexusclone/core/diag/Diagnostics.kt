@@ -16,13 +16,32 @@ import top.niunaijun.blackbox.core.system.ServiceManager
 import java.io.File
 
 /**
+ * How much a failing check actually matters.
+ *
+ * BLOCKER means clones cannot work at all, DEGRADED means they work but will misbehave,
+ * INFO means the row is context and a failure is not a problem.
+ */
+enum class CheckSeverity { BLOCKER, DEGRADED, INFO }
+
+/**
+ * The one-tap fix for a failing check, if there is one.
+ *
+ * NONE means the row is not actionable and must not be clickable.
+ */
+enum class CheckRemedy { NONE, BATTERY_EXEMPTION, KEEPALIVE_SETTINGS, OVERLAY_PERMISSION }
+
+/**
  * One diagnostic check with a pass/fail and a human-readable detail line.
+ *
+ * severity and remedy are defaulted so existing construction sites keep compiling.
  */
 data class Check(
     val id: String,
     val title: String,
     val ok: Boolean,
-    val detail: String
+    val detail: String,
+    val severity: CheckSeverity = CheckSeverity.INFO,
+    val remedy: CheckRemedy = CheckRemedy.NONE
 )
 
 /**
@@ -41,31 +60,55 @@ class Diagnostics(private val context: Context) {
     private val manager = InstanceManager.get(context)
 
     /**
+     * Last sweep, reused for a short window.
+     *
+     * onResume fires on every rotation and on return from a system dialog, and a full sweep
+     * costs a binder round-trip plus a provider retry loop. Twenty seconds is long enough to
+     * absorb those, short enough that a manual re-run is never stale.
+     */
+    @Volatile
+    private var cached: List<Check> = emptyList()
+
+    @Volatile
+    private var cachedAt = 0L
+
+    /**
      * Run every check.
      *
      * Not cheap: the engine probe is a binder round-trip and the keep-alive check reaches
      * the provider client retry loop, which can sleep for up to 2 s. Call this from a
      * background dispatcher, never from the main thread.
+     *
+     * Pass force = true to bypass the short-lived cache, which is what the manual buttons do.
      */
-    fun runAll(): List<Check> = buildList {
-        add(engineServices())
-        add(virtualRoot())
-        add(abiSupport())
-        add(keepAlive())
-        add(batteryExemption())
-        add(storage())
-        add(identityFactory())
-        add(instanceHealth())
-        add(gmsStatus())
-        add(proxyStatus())
-        add(processList())
-        add(hookStatus())
+    fun runAll(force: Boolean = false): List<Check> {
+        val snapshot = cached
+        if (!force && snapshot.isNotEmpty() && System.currentTimeMillis() - cachedAt < 20_000L) {
+            return snapshot
+        }
+        val fresh = buildList {
+            add(engineServices())
+            add(virtualRoot())
+            add(abiSupport())
+            add(keepAlive())
+            add(batteryExemption())
+            add(storage())
+            add(identityFactory())
+            add(instanceHealth())
+            add(gmsStatus())
+            add(proxyStatus())
+            add(processList())
+            add(hookStatus())
+        }
+        cached = fresh
+        cachedAt = System.currentTimeMillis()
+        return fresh
     }
 
     private fun engineServices(): Check {
         // Probe a real binder rather than trusting areServicesAvailable(). That method used
-        // to answer true unconditionally — every branch ended in `return true`, including the
-        // fallback loop whose only producer always returns null — so this row reported PASS
+        // to answer true unconditionally (every branch ended in `return true`, including the
+        // fallback loop whose only producer always returns null), so this row reported PASS
         // on devices where zero services were bound, which is exactly the misdirection this
         // screen exists to prevent.
         //
@@ -83,7 +126,9 @@ class Diagnostics(private val context: Context) {
             "Container services bound",
             ok,
             if (ok) "Probed ${ServiceManager.ACTIVITY_MANAGER}: binder bound"
-            else "Probed ${ServiceManager.ACTIVITY_MANAGER}: no binder; clones cannot launch"
+            else "Probed ${ServiceManager.ACTIVITY_MANAGER}: no binder; clones cannot launch",
+            CheckSeverity.BLOCKER,
+            CheckRemedy.NONE
         )
     }
 
@@ -91,7 +136,14 @@ class Diagnostics(private val context: Context) {
         val root = try {
             BEnvironment.getVirtualRoot()
         } catch (e: Exception) {
-            return Check("virtual_root", "Virtual root writable", false, "unreadable: ${e.message}")
+            return Check(
+                "virtual_root",
+                "Virtual root writable",
+                false,
+                "unreadable: ${e.message}",
+                CheckSeverity.BLOCKER,
+                CheckRemedy.NONE
+            )
         }
         val probe = File(root, ".nexus_probe")
         val ok = try {
@@ -107,7 +159,9 @@ class Diagnostics(private val context: Context) {
             "virtual_root",
             "Virtual root writable",
             ok,
-            if (ok) root.absolutePath else "cannot write to ${root.absolutePath}"
+            if (ok) root.absolutePath else "cannot write to ${root.absolutePath}",
+            CheckSeverity.BLOCKER,
+            CheckRemedy.NONE
         )
     }
 
@@ -118,12 +172,28 @@ class Diagnostics(private val context: Context) {
             "abi",
             "Supported ABI",
             ok,
-            abis.joinToString(", ").ifEmpty { "unknown" }
+            abis.joinToString(", ").ifEmpty { "unknown" },
+            CheckSeverity.BLOCKER,
+            CheckRemedy.NONE
         )
     }
 
     private fun keepAlive(): Check {
         val controller = KeepAliveController.get(context)
+        // strength() returns 0 while the preference is off, and the preference defaults to
+        // off, so requiring strength() >= 3 unconditionally failed this row on every fresh
+        // install and pinned the summary to "needs attention" forever. Off is a choice, not
+        // a fault: report it as degraded and let the user decide.
+        if (!controller.isEnabled()) {
+            return Check(
+                "keepalive",
+                "Keep-alive strength",
+                true,
+                "Disabled in Settings",
+                CheckSeverity.DEGRADED,
+                CheckRemedy.KEEPALIVE_SETTINGS
+            )
+        }
         val level = controller.strength()
         val max = controller.maxStrength()
         return Check(
@@ -134,7 +204,9 @@ class Diagnostics(private val context: Context) {
                 level == 0 -> "Disabled in Settings; no resurrection layer is armed"
                 level >= max -> "$level of $max layers armed (service, exemption, alarm, job)"
                 else -> "$level of $max layers armed; clones may be killed sooner"
-            }
+            },
+            CheckSeverity.DEGRADED,
+            CheckRemedy.KEEPALIVE_SETTINGS
         )
     }
 
@@ -144,7 +216,9 @@ class Diagnostics(private val context: Context) {
             "battery",
             "Battery optimization exemption",
             ok,
-            if (ok) "Exempt" else "Not exempt; clones may be killed in Doze"
+            if (ok) "Exempt" else "Not exempt; clones may be killed in Doze",
+            CheckSeverity.DEGRADED,
+            CheckRemedy.BATTERY_EXEMPTION
         )
     }
 
@@ -156,7 +230,9 @@ class Diagnostics(private val context: Context) {
             "storage",
             "Free storage",
             ok,
-            "${free / (1024 * 1024)} MB available"
+            "${free / (1024 * 1024)} MB available",
+            CheckSeverity.DEGRADED,
+            CheckRemedy.NONE
         )
     }
 
@@ -169,14 +245,23 @@ class Diagnostics(private val context: Context) {
             "Identity generator",
             ok,
             if (ok) "IMEI Luhn self-test passed ($imei)"
-            else "IMEI Luhn self-test FAILED ($imei)"
+            else "IMEI Luhn self-test FAILED ($imei)",
+            CheckSeverity.INFO,
+            CheckRemedy.NONE
         )
     }
 
     private fun instanceHealth(): Check {
         val all = manager.snapshot()
         if (all.isEmpty()) {
-            return Check("instances", "Instances", true, "No clones yet")
+            return Check(
+                "instances",
+                "Instances",
+                true,
+                "No clones yet",
+                CheckSeverity.DEGRADED,
+                CheckRemedy.NONE
+            )
         }
         val overQuota = all.count { it.isOverQuota }
         val dead = all.count { it.state == com.kiyoscripts.nexusclone.core.instance.InstanceState.DEAD }
@@ -186,7 +271,14 @@ class Diagnostics(private val context: Context) {
             if (overQuota > 0) append(", $overQuota over quota")
             if (dead > 0) append(", $dead dead")
         }
-        return Check("instances", "Instances", ok, detail)
+        return Check(
+            "instances",
+            "Instances",
+            ok,
+            detail,
+            CheckSeverity.DEGRADED,
+            CheckRemedy.NONE
+        )
     }
 
     /**
@@ -200,10 +292,24 @@ class Diagnostics(private val context: Context) {
         val users = try {
             BlackBoxCore.get().users
         } catch (e: Exception) {
-            return Check("gms", "Google services", false, "user list unreadable: ${e.message}")
+            return Check(
+                "gms",
+                "Google services",
+                false,
+                "user list unreadable: ${e.message}",
+                CheckSeverity.INFO,
+                CheckRemedy.NONE
+            )
         }
         if (users.isEmpty()) {
-            return Check("gms", "Google services", true, "No virtual users yet")
+            return Check(
+                "gms",
+                "Google services",
+                true,
+                "No virtual users yet",
+                CheckSeverity.INFO,
+                CheckRemedy.NONE
+            )
         }
         val withGms = users.count {
             try {
@@ -217,7 +323,9 @@ class Diagnostics(private val context: Context) {
             "Google services",
             true,
             if (withGms == 0) "Not installed in any of ${users.size} user(s)"
-            else "Installed in $withGms of ${users.size} user(s)"
+            else "Installed in $withGms of ${users.size} user(s)",
+            CheckSeverity.INFO,
+            CheckRemedy.NONE
         )
     }
 
@@ -231,15 +339,21 @@ class Diagnostics(private val context: Context) {
             null
         }
         val installed = selector is com.kiyoscripts.nexusclone.core.net.FixedProxySelector
+        // A binding with no selector in this process is inert: the clone will go out direct
+        // until a guest starts and installs the selector. That is worth a degraded row, not
+        // a green one.
+        val ok = bound == 0 || installed
         return Check(
             "proxy",
             "Proxy routing",
-            true,
+            ok,
             when {
                 bound == 0 -> "No clone has a proxy bound"
                 installed -> "$bound clone(s) bound, selector active in this process"
                 else -> "$bound clone(s) bound; selector installs when a guest starts"
-            }
+            },
+            if (ok) CheckSeverity.INFO else CheckSeverity.DEGRADED,
+            CheckRemedy.NONE
         )
     }
 
@@ -259,13 +373,22 @@ class Diagnostics(private val context: Context) {
                 ?.map { it.processName.removePrefix("$mine:") }
                 ?: emptyList()
         } catch (e: Exception) {
-            return Check("processes", "Guest processes", false, "unreadable: ${e.message}")
+            return Check(
+                "processes",
+                "Guest processes",
+                false,
+                "unreadable: ${e.message}",
+                CheckSeverity.INFO,
+                CheckRemedy.NONE
+            )
         }
         return Check(
             "processes",
             "Guest processes",
             true,
-            if (guests.isEmpty()) "None running" else guests.joinToString(", ")
+            if (guests.isEmpty()) "None running" else guests.joinToString(", "),
+            CheckSeverity.INFO,
+            CheckRemedy.NONE
         )
     }
 
@@ -279,12 +402,16 @@ class Diagnostics(private val context: Context) {
     private fun hookStatus(): Check {
         val sdk = Build.VERSION.SDK_INT
         val supported = sdk == 29 || sdk == 30
+        // ok follows the same predicate as the detail text. It used to be hardcoded true, so
+        // the row showed a green check next to the word "unavailable".
         return Check(
             "hooks",
             "Java hooking",
-            true,
+            supported,
             if (supported) "Epic available (SDK $sdk)"
-            else "Epic unavailable on SDK $sdk; only SDK 29-30 is supported"
+            else "Epic unavailable on SDK $sdk; only SDK 29-30 is supported",
+            CheckSeverity.INFO,
+            CheckRemedy.NONE
         )
     }
 

@@ -60,24 +60,25 @@ object AppManager {
         _engineReady.value = true
     }
 
+    /**
+     * The one loader instance.
+     *
+     * Constructed once. The old body caught a construction failure and then constructed a
+     * second loader, which would throw the same exception from inside the catch block and
+     * escape as an unlabelled failure. A lazy that does not retry is both simpler and
+     * honest: if the loader cannot be built, the exception propagates with a message that
+     * says which object failed, and the caller sees the real cause instead of a second
+     * stack trace from a retry that could never have worked.
+     */
     @JvmStatic
-    val mBlackBoxLoader by lazy {
+    val mBlackBoxLoader: BlackBoxLoader by lazy {
         try {
             BlackBoxLoader()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating BlackBoxLoader: ${e.message}")
-
-            BlackBoxLoader() // Try again, but this might fail
-        }
-    }
-
-    @JvmStatic
-    val mBlackBoxCore by lazy {
-        try {
-            mBlackBoxLoader.getBlackBoxCore()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting BlackBoxCore: ${e.message}")
-            throw e // Re-throw as this is critical
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error creating BlackBoxLoader: ${t.message}")
+            throw IllegalStateException(
+                "BlackBoxLoader could not be constructed: ${t.message}", t
+            )
         }
     }
 
@@ -105,8 +106,12 @@ object AppManager {
         try {
             mBlackBoxLoader.doOnCreate(context)
             initThirdService(context)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in doOnCreate: ${e.message}")
+        } catch (t: Throwable) {
+            // Throwable, not Exception: an engine bring-up failure can surface as an
+            // Error (a missing class or a failed native load), and letting that escape
+            // would skip the finally block's readiness publish and leave every waiter
+            // hanging until its timeout.
+            Log.e(TAG, "Error in doOnCreate: ${t.message}")
             // Don't re-throw as this might not be critical for app startup
         } finally {
             // Always publish readiness, including on failure: the UI waits on this signal

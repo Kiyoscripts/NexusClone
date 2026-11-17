@@ -199,10 +199,14 @@ class SnapshotManager(private val context: Context) {
                     }
                 }
 
-                // Commit: every entry matched, so move the staged files into place. An
-                // existing target is moved aside first, so a failure part way through can be
-                // rolled back to the pre-restore state instead of leaving the data dir with
-                // some files replaced and the rest deleted.
+                // Commit: every entry matched, so move the staged files into place.
+                //
+                // Invariant: Every target that existed before the commit is in `backups`
+                // before its replacement is attempted, so abortRestore can always put it
+                // back. A target that did not exist has no backup and is simply deleted.
+                //
+                // This is what keeps a failure part way through from leaving the data dir
+                // with some files replaced and the rest deleted.
                 for (tmp in staged) {
                     val target = File(tmp.parentFile, tmp.name.removeSuffix(STAGING_SUFFIX))
                     if (target.exists()) {
@@ -268,6 +272,57 @@ class SnapshotManager(private val context: Context) {
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
 
+    /**
+     * The newest snapshot belonging to [inst], or null when it has never been snapshotted.
+     *
+     * Archives are named after the instance, so a stale archive from a previous install of
+     * the same package is still a valid restore source. Callers that match the prefix
+     * themselves tend to pick the first hit from a directory listing, which is not the
+     * newest one.
+     */
+    fun newestFor(inst: CloneInstance): File? {
+        val prefix = "${inst.userId}_${inst.packageName}"
+        return defaultDir().listFiles { f ->
+            f.isFile && f.name.startsWith(prefix) && f.name.endsWith(EXTENSION)
+        }?.maxByOrNull { it.lastModified() }
+    }
+
+    /** Delete [archive]. Returns true when it is gone afterwards. */
+    fun delete(archive: File): Boolean {
+        if (!archive.exists()) return true
+        val gone = archive.delete() || !archive.exists()
+        if (!gone) Log.w(TAG, "could not delete ${archive.name}")
+        return gone
+    }
+
+    /** Size of [archive] in bytes, or 0 when it is not there. */
+    fun sizeOf(archive: File): Long = if (archive.exists()) archive.length() else 0L
+
+    /**
+     * Restore [archive] into [inst] after making sure the guest is not running.
+     *
+     * Restoring over a running guest corrupts its open SQLite databases: the guest keeps
+     * writing through descriptors that now point at replaced files, and the rollback journal
+     * it holds no longer matches the database it is attached to. Stopping first is the only
+     * way to guarantee the files on disk are the ones the guest will open next.
+     *
+     * The stop result is ignored on purpose. A guest that is already stopped, or that fails
+     * to stop cleanly, still has to be checked for residency, and the poll below is the real
+     * gate. If it never goes non-resident the restore is attempted anyway rather than
+     * silently doing nothing, because the caller asked for a restore and a refusal that
+     * looks like success is worse than a restore the user can retry.
+     */
+    suspend fun restoreSafely(inst: CloneInstance, archive: File): Result<Unit> {
+        InstanceManager.get(context).stop(inst.id)
+        var waited = 0L
+        while (waited < 3_000L) {
+            if (manager.byId(inst.id)?.state?.isResident != true) break
+            kotlinx.coroutines.delay(100L)
+            waited += 100L
+        }
+        return restore(inst, archive)
+    }
+
     private data class EntryRecord(val path: String, val size: Long, val sha256: String)
 
     private fun addTree(
@@ -284,6 +339,13 @@ class SnapshotManager(private val context: Context) {
             for (f in children) {
                 if (f.isDirectory) {
                     stack.addLast(f)
+                    continue
+                }
+                // A restore that was killed part way leaves its staging and backup files
+                // behind. Archiving them would capture a half applied restore as if it were
+                // real data, and the next restore would then treat that garbage as the
+                // pre-restore state to roll back to.
+                if (f.name.endsWith(STAGING_SUFFIX) || f.name.endsWith(BACKUP_SUFFIX)) {
                     continue
                 }
                 val rel = f.relativeTo(root).path.replace(File.separatorChar, '/')

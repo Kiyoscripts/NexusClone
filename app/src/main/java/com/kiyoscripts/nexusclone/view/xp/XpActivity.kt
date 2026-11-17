@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.text.TextUtils
+import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -17,7 +18,6 @@ import com.kiyoscripts.nexusclone.util.InjectionUtil
 import com.kiyoscripts.nexusclone.util.inflate
 import com.kiyoscripts.nexusclone.util.toast
 import com.kiyoscripts.nexusclone.view.base.LoadingActivity
-import com.kiyoscripts.nexusclone.view.list.ListActivity
 
 /**
  *
@@ -72,10 +72,23 @@ class XpActivity : LoadingActivity() {
 
             mAdapter = RVAdapter<XpModuleInfo>(this, XpAdapter()).bind(viewBinding.recyclerView)
                 .setItemClickListener { view, item, position ->
-                    item.enable = !item.enable
-                    BlackBoxCore.get().setModuleEnable(item.packageName, item.enable)
-                    mAdapter.replaceAt(position, item)
-                    toast(R.string.restart_module)
+                    // The engine write can fail. Reverting the toggle matters: leaving it
+                    // flipped would tell the user a module was enabled when it was not.
+                    val next = !item.enable
+                    val ok = try {
+                        BlackBoxCore.get().setModuleEnable(item.packageName, next)
+                        true
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "setModuleEnable(${item.packageName}) failed: ${e.message}")
+                        false
+                    }
+                    if (ok) {
+                        item.enable = next
+                        mAdapter.replaceAt(position, item)
+                        toast(R.string.restart_module)
+                    } else {
+                        toast(getString(R.string.legacy_xp_toggle_failed, item.packageName))
+                    }
                 }.setItemLongClickListener { _, item, _ ->
                     unInstallModule(item.packageName)
                 }
@@ -85,13 +98,32 @@ class XpActivity : LoadingActivity() {
         }
 
     private fun initFab() {
+        // A document picker, not the app picker.
+        //
+        // This used to launch ListActivity with onlyShowXp=true, which lists modules that
+        // are ALREADY installed. Picking one re-installed a module the user already had,
+        // and there was no way to install a new one from this screen at all. The FAB is an
+        // install action, so it opens a file picker for an apk.
         viewBinding.fab.setOnClickListener {
-            val intent = Intent(this, ListActivity::class.java)
-            intent.putExtra("onlyShowXp", true)
-            apkPathResult.launch(intent)
+            apkPicker.launch(arrayOf("application/vnd.android.package-archive"))
         }
-
     }
+
+    private val apkPicker =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Throwable) {
+                // Providers are allowed to refuse; the read grant still holds for this
+                // process, which is all the install needs.
+                Log.d(TAG, "persistable grant refused: ${e.message}")
+            }
+            installModule(uri.toString())
+        }
 
 
     override fun onStart() {
@@ -127,21 +159,12 @@ class XpActivity : LoadingActivity() {
     }
 
 
-    private val apkPathResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (it.resultCode == RESULT_OK) {
-            it.data?.let { data ->
-                val source = data.getStringExtra("source")
-                if (source != null) {
-                    installModule(source)
-                }
-            }
-
-        }
-    }
 
 
 
     companion object {
+        private const val TAG = "XpActivity"
+
         fun start(context: Context) {
             val intent = Intent(context, XpActivity::class.java)
             context.startActivity(intent)

@@ -223,19 +223,19 @@
                         style="@style/Nc.Chip"
                         android:layout_marginEnd="@dimen/space_2"
                         android:background="@drawable/bg_chip_on"
-                        android:text="All"
+                        android:text="@string/ui_chip_all"
                         android:textColor="@color/text_on_accent" />
 
                     <TextView
                         android:id="@+id/chipUser"
                         style="@style/Nc.Chip"
                         android:layout_marginEnd="@dimen/space_2"
-                        android:text="User" />
+                        android:text="@string/ui_chip_not_cloned" />
 
                     <TextView
                         android:id="@+id/chipSystem"
                         style="@style/Nc.Chip"
-                        android:text="System" />
+                        android:text="@string/ui_chip_cloned" />
                 </LinearLayout>
 
                 <FrameLayout
@@ -321,7 +321,7 @@
                         style="@style/Nc.SectionHead"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="System" />
+                        android:text="@string/nc_system" />
 
                     <LinearLayout
                         style="@style/Nc.Card"
@@ -407,7 +407,7 @@
                                     style="@style/Text.Label"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="Default proxy" />
+                                    android:text="@string/nc_default_proxy" />
 
                                 <TextView
                                     android:id="@+id/subProxy"
@@ -478,7 +478,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_5"
-                        android:text="Behaviour" />
+                        android:text="@string/nc_behaviour" />
 
                     <LinearLayout
                         style="@style/Nc.Card"
@@ -544,14 +544,14 @@
                                     style="@style/Text.Label"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="Capture previews" />
+                                    android:text="@string/nc_capture_previews" />
 
                                 <TextView
                                     style="@style/Text.Caption"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="2dp"
-                                    android:text="Screenshot each clone on pause" />
+                                    android:text="@string/nc_capture_previews_sub" />
                             </LinearLayout>
 
                             <Switch
@@ -568,7 +568,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_5"
-                        android:text="About" />
+                        android:text="@string/nc_about" />
 
                     <LinearLayout
                         style="@style/Nc.Card"
@@ -591,7 +591,7 @@
                             <TextView
                                 android:layout_width="84dp"
                                 android:layout_height="wrap_content"
-                                android:text="Version"
+                                android:text="@string/nc_version"
                                 android:textColor="@color/text_tertiary"
                                 android:textSize="12sp" />
 
@@ -619,7 +619,7 @@
                             <TextView
                                 android:layout_width="84dp"
                                 android:layout_height="wrap_content"
-                                android:text="Device"
+                                android:text="@string/nc_device"
                                 android:textColor="@color/text_tertiary"
                                 android:textSize="12sp" />
 

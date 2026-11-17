@@ -21,9 +21,16 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Refresh policy:
  *  - on guest activity pause (the cheap, always-correct moment)
- *  - on a 5 s timer, but only while the grid is visible and only for instances on the
- *    current page, capped at [MAX_CONCURRENT] in flight
+ *  - on a 5 s timer, but only while the grid is visible, capped at [MAX_CONCURRENT] in
+ *    flight
  *  - manual pull-to-refresh
+ *
+ * The 5 s timer is started from the lifecycle observer with an empty provider, so in
+ * practice it does housekeeping only and never captures anything. That is deliberate: the
+ * host holds no handle on a guest's Window from the grid, so there is nothing to capture
+ * from there. Real captures come from the guest's own pause callback, which is the only
+ * place a live Window exists. A caller that does have windows can pass a real provider to
+ * [startTimer] and get the documented 5 s refresh.
  *
  * The timer is deliberately not a background service: previews of a backgrounded app are
  * stale by definition and capturing them burns battery for nothing.
@@ -31,6 +38,13 @@ import java.util.concurrent.ConcurrentHashMap
  * Lifecycle: call [attach] once with the owning Activity or Fragment. The timer then runs
  * between ON_START and ON_STOP, and the on-disk cache is trimmed on ON_DESTROY. Without
  * [attach] nothing refreshes and nothing is ever evicted, which is what used to happen.
+ *
+ * One instance per process: [get] returns the shared one. The public constructor still
+ * works, because callers construct it directly, but every instance shares the companion's
+ * scope, so a second construction does not allocate a second coroutine scope. A directly
+ * constructed instance is deliberately not registered as the shared one: the caller passes
+ * an Activity context, and parking that in a static field would leak the Activity for the
+ * life of the process.
  */
 class PreviewCache(private val context: Context) {
 
@@ -59,11 +73,31 @@ class PreviewCache(private val context: Context) {
          * every five seconds for nothing.
          */
         private const val HOUSEKEEPING_EVERY = 12
+
+        /**
+         * The one shared scope.
+         *
+         * A scope per instance means a SupervisorJob per instance, and nothing ever
+         * cancels them, so every construction leaked a job for the life of the process.
+         * The work posted here is fire-and-forget cache maintenance, so one process-wide
+         * scope is both cheaper and correct.
+         */
+        private val sharedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        @Volatile
+        private var INSTANCE: PreviewCache? = null
+
+        /** The process-wide cache. */
+        fun get(context: Context): PreviewCache {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: PreviewCache(context.applicationContext).also { INSTANCE = it }
+            }
+        }
     }
 
     private val manager = InstanceManager.get(context)
     private val main = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = sharedScope
     private val inFlight = ConcurrentHashMap<String, Boolean>()
     private val lastCapture = ConcurrentHashMap<String, Long>()
 
@@ -185,6 +219,21 @@ class PreviewCache(private val context: Context) {
             Log.w(TAG, "captureGuest(${inst.key}) failed: ${e.message}")
             onDone(false)
         }
+    }
+
+    /**
+     * Attempt a capture for each of [instances].
+     *
+     * There is no guest-window registry in this codebase: the host process has no handle on
+     * a running guest's Window, and the only place one exists is the guest's own activity
+     * lifecycle callback (see [captureGuest]). So this skips silently for every instance
+     * rather than pretending to capture. It exists as the seam a window source would plug
+     * into once one exists; until then it is a no-op that does not throw and does not
+     * schedule work.
+     */
+    fun refreshVisible(instances: List<CloneInstance>) {
+        if (instances.isEmpty()) return
+        Log.d(TAG, "refreshVisible(${instances.size}): no guest window source, skipping")
     }
 
     /**

@@ -76,14 +76,21 @@ class ListActivity : AppCompatActivity() {
         binding.btnClearSearch.setOnClickListener { binding.search.setText("") }
 
         binding.chipAll.setOnClickListener { setChip(Chip.ALL) }
-        binding.chipUser.setOnClickListener { setChip(Chip.USER) }
-        binding.chipSystem.setOnClickListener { setChip(Chip.SYSTEM) }
-        binding.chipCloned.setOnClickListener { setChip(Chip.CLONED) }
+        binding.chipUser.setOnClickListener { setChip(Chip.NOT_CLONED) }
+        binding.chipSystem.setOnClickListener { setChip(Chip.CLONED) }
 
         initViewModel()
     }
 
-    private enum class Chip { ALL, USER, SYSTEM, CLONED }
+    /**
+     * Three filters, three distinct predicates.
+     *
+     * There used to be four chips where SYSTEM and CLONED both tested `app.isInstall`, so
+     * two chips did exactly the same thing and one of them was labelled with a word that
+     * could never be true: the repository drops FLAG_SYSTEM packages, so no row here is a
+     * system app.
+     */
+    private enum class Chip { ALL, NOT_CLONED, CLONED }
 
     private var currentChip = Chip.ALL
 
@@ -94,9 +101,8 @@ class ListActivity : AppCompatActivity() {
 
         listOf(
             binding.chipAll to (chip == Chip.ALL),
-            binding.chipUser to (chip == Chip.USER),
-            binding.chipSystem to (chip == Chip.SYSTEM),
-            binding.chipCloned to (chip == Chip.CLONED)
+            binding.chipUser to (chip == Chip.NOT_CLONED),
+            binding.chipSystem to (chip == Chip.CLONED)
         ).forEach { (view, selected) ->
             view.setBackgroundResource(
                 if (selected) R.drawable.bg_chip_on else R.drawable.bg_chip
@@ -114,6 +120,10 @@ class ListActivity : AppCompatActivity() {
             viewModel.getInstalledModules()
             binding.subtitle.text = getString(R.string.installed_module)
         } else {
+            // User 0 is the host user, and it is the correct argument here: this picker
+            // lists packages installed on the device, not packages installed into a clone.
+            // The clone's own user id is allocated when the clone is created, so there is
+            // no per-clone user to scope this list to.
             viewModel.getInstallAppList(0)
             binding.subtitle.text = getString(R.string.choose_app)
         }
@@ -133,8 +143,7 @@ class ListActivity : AppCompatActivity() {
                 app.packageName.contains(query, ignoreCase = true)
             val matchesChip = when (currentChip) {
                 Chip.ALL -> true
-                Chip.USER -> !app.isInstall
-                Chip.SYSTEM -> app.isInstall
+                Chip.NOT_CLONED -> !app.isInstall
                 Chip.CLONED -> app.isInstall
             }
             matchesQuery && matchesChip
@@ -147,14 +156,12 @@ class ListActivity : AppCompatActivity() {
             if (filtered.isEmpty()) View.GONE else View.VISIBLE
     }
 
-    private val openDocumentResult =
-        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-            uri?.let { finishWithResult(it.toString()) }
-        }
 
     private fun finishWithResult(source: String) {
-        intent.putExtra("source", source)
-        setResult(Activity.RESULT_OK, intent)
+        // A fresh Intent, not the Activity's own launch intent: mutating that one means a
+        // recreated Activity carries a stale result payload.
+        val result = Intent().putExtra("source", source)
+        setResult(Activity.RESULT_OK, result)
         val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
         window.peekDecorView()?.run { imm.hideSoftInputFromWindow(windowToken, 0) }
         finish()

@@ -3,10 +3,13 @@ package com.kiyoscripts.nexusclone.ui.identity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -16,6 +19,7 @@ import com.kiyoscripts.nexusclone.core.identity.IdentityFactory
 import com.kiyoscripts.nexusclone.core.identity.IdentityStore
 import com.kiyoscripts.nexusclone.core.instance.InstanceManager
 import com.kiyoscripts.nexusclone.databinding.ActivityIdentityBinding
+import com.kiyoscripts.nexusclone.databinding.ItemIdentityBinding
 import kotlinx.coroutines.launch
 
 /**
@@ -23,6 +27,9 @@ import kotlinx.coroutines.launch
  *
  * Generating a profile only persists it; binding it to a clone is a separate step so the
  * same frozen tuple can be reused across clones that must look like one handset.
+ *
+ * The summary line always says which profile is live on this clone and whether the
+ * selected profile is that one or merely saved, because Apply is otherwise a blind action.
  */
 class IdentityActivity : AppCompatActivity() {
 
@@ -43,6 +50,7 @@ class IdentityActivity : AppCompatActivity() {
     private var instanceId: Long = 0L
 
     private var selectedId: Long? = null
+    private var expanded: Boolean = false
     private var rows: List<DeviceIdentity> = emptyList()
     private lateinit var adapter: IdentityAdapter
 
@@ -77,23 +85,70 @@ class IdentityActivity : AppCompatActivity() {
         refreshSummary()
     }
 
+    /** Re-reads the clone binding, then repaints the summary from the current state. */
     private fun refreshSummary() {
         lifecycleScope.launch {
             manager.refresh()
-            val boundId = manager.byId(instanceId)?.identityId
-            val bound = boundId?.let { store.byId(it) }
-            binding.identitySummary.text = if (bound == null) {
-                "Container default"
+            renderSummary()
+        }
+    }
+
+    private fun renderSummary() {
+        val boundId = manager.byId(instanceId)?.identityId
+        val bound = boundId?.let { store.byId(it) }
+        val selected = selectedId?.let { store.byId(it) }
+
+        val text = StringBuilder()
+        text.append(
+            if (bound == null) {
+                getString(R.string.identity_none)
             } else {
-                "${bound.name} · ${bound.model} / ${bound.imei}"
+                getString(
+                    R.string.id_bound_to_clone,
+                    "${bound.name} · ${bound.model} / ${bound.imei}"
+                )
+            }
+        )
+
+        if (selected != null) {
+            text.append('\n')
+            text.append(
+                if (selected.id == boundId) {
+                    getString(R.string.id_bound_to_clone, selected.name)
+                } else {
+                    getString(R.string.id_saved_unbound, selected.name)
+                }
+            )
+            if (expanded) {
+                text.append('\n')
+                text.append(
+                    getString(
+                        R.string.id_full_tuple,
+                        selected.brand,
+                        selected.model,
+                        selected.device,
+                        selected.fingerprint,
+                        selected.androidId,
+                        selected.imei,
+                        selected.meid,
+                        selected.macWifi,
+                        selected.serial,
+                        selected.gsfId,
+                        selected.sdk,
+                        selected.abi
+                    )
+                )
             }
         }
+
+        binding.identitySummary.text = text
     }
 
     private fun generate() {
         val id = IdentityFactory.generate()
         val newId = store.insert(id)
         selectedId = newId
+        expanded = false
         reload()
         toast(getString(R.string.identity_generated))
     }
@@ -101,23 +156,70 @@ class IdentityActivity : AppCompatActivity() {
     private fun applySelected() {
         val id = selectedId ?: return
         lifecycleScope.launch {
-            manager.setIdentity(instanceId, id)
+            val result = manager.setIdentity(instanceId, id)
+            if (result.isSuccess) {
+                store.markUsed(id)
+                toast(getString(R.string.identity_applied))
+            } else {
+                toast(getString(R.string.id_apply_failed))
+            }
             refreshSummary()
         }
-        toast(getString(R.string.identity_applied))
     }
 
     private fun clearBinding() {
         lifecycleScope.launch {
-            manager.setIdentity(instanceId, null)
+            val result = manager.setIdentity(instanceId, null)
+            if (result.isSuccess) {
+                toast(getString(R.string.identity_cleared))
+            } else {
+                toast(getString(R.string.id_clear_failed))
+            }
             refreshSummary()
         }
-        toast(getString(R.string.identity_cleared))
     }
 
     private fun select(identity: DeviceIdentity) {
-        selectedId = identity.id
+        if (selectedId == identity.id) {
+            expanded = !expanded
+        } else {
+            selectedId = identity.id
+            expanded = false
+        }
         adapter.notifyDataSetChanged()
+        renderSummary()
+    }
+
+    /**
+     * Delete a profile, unbinding it from every clone first.
+     *
+     * A clone that still points at a deleted row would fall back to the container default
+     * silently, so the references are cleared explicitly before the row goes away.
+     */
+    private fun confirmDelete(identity: DeviceIdentity) {
+        AlertDialog.Builder(this)
+            .setMessage(getString(R.string.id_delete_confirm, identity.name))
+            .setNegativeButton(R.string.id_cancel, null)
+            .setPositiveButton(R.string.id_delete) { _, _ -> delete(identity) }
+            .show()
+    }
+
+    private fun delete(identity: DeviceIdentity) {
+        lifecycleScope.launch {
+            manager.refresh()
+            for (clone in manager.snapshot()) {
+                if (clone.identityId == identity.id) {
+                    manager.setIdentity(clone.id, null)
+                }
+            }
+            store.delete(identity.id)
+            if (selectedId == identity.id) {
+                selectedId = null
+                expanded = false
+            }
+            reload()
+            toast(getString(R.string.id_deleted, identity.name))
+        }
     }
 
     private fun toast(message: String) {
@@ -126,26 +228,34 @@ class IdentityActivity : AppCompatActivity() {
 
     private inner class IdentityAdapter : RecyclerView.Adapter<IdentityAdapter.Holder>() {
 
-        inner class Holder(val text: TextView) : RecyclerView.ViewHolder(text)
+        inner class Holder(val item: ItemIdentityBinding) : RecyclerView.ViewHolder(item.root)
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-            val tv = TextView(parent.context).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-                setPadding(16, 24, 16, 24)
-                textSize = 14f
-            }
-            return Holder(tv)
-        }
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder =
+            Holder(ItemIdentityBinding.inflate(LayoutInflater.from(parent.context), parent, false))
 
         override fun getItemCount(): Int = rows.size
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val identity = rows[position]
-            holder.text.text = "${identity.name}\n${identity.model} / ${identity.imei}"
-            holder.text.setOnClickListener { select(identity) }
+            val isSelected = identity.id == selectedId
+
+            holder.item.idName.text = identity.name
+            holder.item.idMeta.text = "${identity.model} / ${identity.imei}"
+
+            if (isSelected) {
+                holder.item.root.setBackgroundResource(R.drawable.bg_input)
+            } else {
+                holder.item.root.setBackgroundColor(
+                    ContextCompat.getColor(this@IdentityActivity, R.color.surface_raised)
+                )
+            }
+            holder.item.idCheck.visibility = if (isSelected) View.VISIBLE else View.INVISIBLE
+
+            holder.item.root.setOnClickListener { select(identity) }
+            holder.item.root.setOnLongClickListener {
+                confirmDelete(identity)
+                true
+            }
         }
     }
 }

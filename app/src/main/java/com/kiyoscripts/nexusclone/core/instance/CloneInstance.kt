@@ -20,6 +20,14 @@ data class CloneInstance(
     val lastLaunchAt: Long = 0L,
     /** Bytes, refreshed by [InstanceManager.refreshSizes]. */
     val dataSizeBytes: Long = 0L,
+    /**
+     * Epoch millis of the last size walk that wrote [dataSizeBytes].
+     *
+     * Persisted so the staleness check survives a process restart: an in-memory stamp
+     * alone would make every clone look stale after the app is killed and force a full
+     * disk walk on the first screen that asks for sizes.
+     */
+    val lastSizeAt: Long = 0L,
     /** Soft quota in bytes, 0 means unlimited. */
     val quotaBytes: Long = 0L,
     /** Relative path under the preview cache dir, null when no thumbnail exists. */

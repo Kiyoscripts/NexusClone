@@ -143,7 +143,7 @@
                     android:padding="3dp">
 
                     <TextView
-                        android:id="@+id/segSocks"
+                        android:id="@+id/segSocks5"
                         android:layout_width="0dp"
                         android:layout_height="34dp"
                         android:layout_weight="1"
@@ -153,7 +153,20 @@
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/text_primary"
-                        android:text="SOCKS5"
+                        android:text="@string/net_socks5"
+                        android:includeFontPadding="false" />
+
+                    <TextView
+                        android:id="@+id/segSocks4"
+                        android:layout_width="0dp"
+                        android:layout_height="34dp"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/text_secondary"
+                        android:text="@string/net_socks4"
                         android:includeFontPadding="false" />
 
                     <TextView
@@ -166,20 +179,7 @@
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/text_secondary"
-                        android:text="HTTP"
-                        android:includeFontPadding="false" />
-
-                    <TextView
-                        android:id="@+id/segHttps"
-                        android:layout_width="0dp"
-                        android:layout_height="34dp"
-                        android:layout_weight="1"
-                        android:gravity="center"
-                        android:textSize="12sp"
-                        android:textStyle="bold"
-                        android:textAllCaps="false"
-                        android:textColor="@color/text_secondary"
-                        android:text="HTTPS"
+                        android:text="@string/net_http"
                         android:includeFontPadding="false" />
                 </LinearLayout>
             </LinearLayout>
@@ -337,7 +337,7 @@
                     android:layout_width="0dp"
                     android:layout_height="@dimen/button_height"
                     android:layout_weight="1"
-                    android:text="Test"
+                    android:text="@string/nc_test"
                     android:drawableStart="@drawable/ic_nc_refresh"
                     android:drawablePadding="@dimen/space_2"
                     android:gravity="center" />

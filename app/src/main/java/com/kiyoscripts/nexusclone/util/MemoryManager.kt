@@ -2,6 +2,8 @@ package com.kiyoscripts.nexusclone.util
 
 import android.app.ActivityManager
 import android.content.Context
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.util.Log
 import java.lang.Runtime
 
@@ -78,7 +80,7 @@ object MemoryManager {
      *
      * Deliberately does not force a collection. On ART a forced full GC is a synchronous
      * stop-the-world pause, not a hint, and this is reached from a RecyclerView scroll
-     * callback on the main thread — the worst possible moment to freeze the UI. ART already
+     * callback on the main thread, the worst possible moment to freeze the UI. ART already
      * collects on allocation pressure; the useful thing to do here is report the pressure so
      * the caller can drop caches.
      *
@@ -127,6 +129,19 @@ object MemoryManager {
         }
     }
     
+    /**
+     * A neutral stand-in icon for a row whose real icon was skipped.
+     *
+     * The icon path must never hand a visible row a null drawable: a null icon means an
+     * empty cell, which reads as a broken app rather than as a deferred decode. A flat
+     * ColorDrawable costs one object and no bitmap, so it is safe to build even while the
+     * memory guard is tripped. The colour is the same neutral grey the thumbnail letterbox
+     * uses, so a placeholder row and a letterboxed preview look like the same design.
+     */
+    fun placeholderIcon(context: Context): Drawable {
+        return ColorDrawable(0xFF2A2A2A.toInt())
+    }
+
     /**
      * Get memory info for debugging
      */

@@ -3,9 +3,11 @@ package com.kiyoscripts.nexusclone.ui.macro
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.text.InputType
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -55,6 +57,9 @@ class MacroActivity : AppCompatActivity() {
     /** The running player, if a replay is in progress. */
     private var player: MacroPlayer? = null
 
+    /** True while a replay is in flight, which turns Play into Stop. */
+    private var playing: Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMacroBinding.inflate(layoutInflater)
@@ -73,7 +78,8 @@ class MacroActivity : AppCompatActivity() {
         binding.recycler.adapter = adapter
 
         binding.btnRecord.setOnClickListener { toggleRecord() }
-        binding.btnPlay.setOnClickListener { playSelected() }
+        binding.btnPlay.setOnClickListener { if (playing) stopPlayback() else playSelected() }
+        updatePlayState()
 
         reload()
     }
@@ -84,7 +90,23 @@ class MacroActivity : AppCompatActivity() {
         MacroRecorder.detach(recorder)
         player?.cancel()
         player = null
+        playing = false
         super.onDestroy()
+    }
+
+    /** Play is only meaningful with a selection, and it becomes Stop while replaying. */
+    private fun updatePlayState() {
+        binding.btnPlay.isEnabled = playing || selected != null
+        binding.btnPlay.text = getString(if (playing) R.string.macro_stop else R.string.macro_play)
+    }
+
+    /** Cancel an in-flight replay and put the button back to Play. */
+    private fun stopPlayback() {
+        player?.cancel()
+        player = null
+        playing = false
+        binding.status.text = getString(R.string.macro_stopped)
+        updatePlayState()
     }
 
     /**
@@ -112,10 +134,14 @@ class MacroActivity : AppCompatActivity() {
         }
         player?.cancel()
         binding.status.text = getString(R.string.macro_playing, macro.name)
+        playing = true
+        updatePlayState()
         val p = MacroPlayer(target, macro) {
             runOnUiThread {
                 binding.status.text = getString(R.string.macro_played, macro.name)
                 player = null
+                playing = false
+                updatePlayState()
             }
         }
         player = p
@@ -133,12 +159,36 @@ class MacroActivity : AppCompatActivity() {
                 return
             }
             val input = EditText(this).apply { hint = getString(R.string.macro_name) }
+            val loopInput = EditText(this).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER
+                hint = getString(R.string.macro_loop_count_hint)
+                setText("1")
+            }
+            val loopLabel = android.widget.TextView(this).apply {
+                text = getString(R.string.macro_loop_count_label)
+            }
+            // Built in code because the dialog layout is not ours to edit.
+            val form = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(48, 24, 48, 0)
+                addView(input)
+                addView(loopLabel)
+                addView(loopInput)
+            }
             AlertDialog.Builder(this)
                 .setTitle(R.string.macro_save)
-                .setView(input)
+                .setView(form)
                 .setPositiveButton(R.string.ok) { _, _ ->
-                    val name = input.text.toString().ifBlank { "macro ${System.currentTimeMillis()}" }
-                    val m = recorder.toMacro(name, userId, packageName)
+                    val name = input.text.toString().ifBlank {
+                        getString(R.string.macro_default_name, System.currentTimeMillis())
+                    }
+                    val loops = loopInput.text.toString().toIntOrNull() ?: 1
+                    val m = recorder.toMacro(
+                        name,
+                        userId,
+                        packageName,
+                        loops.coerceIn(1, 999)
+                    )
                     store.insert(m)
                     reload()
                 }
@@ -157,6 +207,8 @@ class MacroActivity : AppCompatActivity() {
     private fun reload() {
         val list = store.forInstance(userId, packageName)
         adapter.submit(list)
+        if (selected != null && list.none { it.id == selected?.id }) selected = null
+        updatePlayState()
         if (list.isEmpty()) {
             binding.status.text = getString(R.string.macro_empty)
         }
@@ -195,9 +247,15 @@ class MacroActivity : AppCompatActivity() {
                 )
                 // Selecting a row is what arms the Play button. Previously Play was a
                 // hardcoded toast because nothing tracked a selection.
+                b.root.setBackgroundResource(
+                    if (selected?.id == m.id) R.drawable.bg_input else 0
+                )
                 b.root.setOnClickListener {
                     selected = m
                     binding.status.text = getString(R.string.macro_selected, m.name)
+                    // Repaint the whole list so the previous selection clears.
+                    notifyDataSetChanged()
+                    updatePlayState()
                 }
                 b.root.setOnLongClickListener {
                     AlertDialog.Builder(this@MacroActivity)
@@ -206,6 +264,7 @@ class MacroActivity : AppCompatActivity() {
                             store.delete(m.id)
                             if (selected?.id == m.id) selected = null
                             reload()
+                            updatePlayState()
                         }
                         .setNegativeButton(R.string.cancel, null)
                         .show()

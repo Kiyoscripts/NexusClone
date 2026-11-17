@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Strings for the shell and the clone detail screen.
+
+  Kept apart from strings.xml so the inherited BlackBox strings and the redesign
+  strings stay readable; the nc_ prefix there and the ui_ prefix here mark which
+  screen a key belongs to.
+-->
+<resources>
+
+    <!-- App picker chips. The middle chip is "not cloned" and the last is "cloned":
+         the repository already drops FLAG_SYSTEM packages, so a user/system split
+         would be a lie. -->
+    <string name="ui_chip_all">All</string>
+    <string name="ui_chip_not_cloned">Not cloned</string>
+    <string name="ui_chip_cloned">Cloned</string>
+
+    <!-- Clone detail subtitles -->
+    <string name="ui_macro_count">%1$d macros</string>
+    <string name="ui_snapshot_last_saved">Last saved %1$s</string>
+
+    <!-- Relative time -->
+    <string name="ui_time_just_now">just now</string>
+    <string name="ui_time_minutes_ago">%1$d min ago</string>
+    <string name="ui_time_hours_ago">%1$d h ago</string>
+    <string name="ui_time_days_ago">%1$d d ago</string>
+
+    <!-- Byte sizes -->
+    <string name="ui_bytes">%1$d B</string>
+    <string name="ui_kb">%1$d KB</string>
+    <string name="ui_mb">%1$d MB</string>
+    <string name="ui_gb">%1$.1f GB</string>
+
+    <!-- Action failures -->
+    <string name="ui_action_failed">%1$s failed: %2$s</string>
+
+    <!-- Settings -->
+    <string name="ui_no_global_proxy">No global proxy. Set one per clone.</string>
+    <string name="ui_gms_installed_in">Installed in %1$d of %2$d users</string>
+    <string name="ui_gms_not_installed">Not installed in any user</string>
+
+    <!-- Overflow -->
+    <string name="ui_import_apk">Import APK</string>
+
+    <!-- Clones subtitle -->
+    <string name="ui_clones_running">%1$s · %2$s</string>
+    <string name="ui_clones_running_one">%1$s · %2$s</string>
+
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Diagnostics screen: clipboard report and remedy hints. -->
+    <string name="diag_copy_report">Copy report</string>
+    <string name="diag_copied">Diagnostics report copied</string>
+    <string name="diag_disabled_in_settings">Disabled in Settings</string>
+    <string name="diag_proxy_inert">%1$d clone(s) bound; the binding is inert until a guest starts</string>
+    <string name="diag_hooks_unavailable">Epic unavailable on SDK %1$d; only SDK 29-30 is supported</string>
+    <string name="diag_blockers">%1$d blocker(s)</string>
+</resources>

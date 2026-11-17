@@ -2,6 +2,8 @@ package com.kiyoscripts.nexusclone.ui.diag
 
 import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -13,6 +15,7 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -20,9 +23,12 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.kiyoscripts.nexusclone.R
 import com.kiyoscripts.nexusclone.core.diag.Check
+import com.kiyoscripts.nexusclone.core.diag.CheckRemedy
+import com.kiyoscripts.nexusclone.core.diag.CheckSeverity
 import com.kiyoscripts.nexusclone.core.diag.Diagnostics
 import com.kiyoscripts.nexusclone.databinding.ActivityDiagnosticsBinding
 import com.kiyoscripts.nexusclone.databinding.ItemCheckBinding
+import com.kiyoscripts.nexusclone.view.setting.SettingActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -68,6 +74,9 @@ class DiagnosticsActivity : AppCompatActivity() {
 
     private var ringAnimator: ValueAnimator? = null
 
+    /** Last rendered sweep, so the long-press report matches what is on screen. */
+    private var lastChecks: List<Check> = emptyList()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityDiagnosticsBinding.inflate(layoutInflater)
@@ -76,8 +85,12 @@ class DiagnosticsActivity : AppCompatActivity() {
         diag = Diagnostics(this)
 
         binding.btnBack.setOnClickListener { finish() }
-        binding.btnRerun.setOnClickListener { run() }
-        binding.btnRunAll.setOnClickListener { run() }
+        // Manual buttons always re-sweep; onResume keeps the cached path.
+        binding.btnRerun.setOnClickListener { run(force = true) }
+        binding.btnRunAll.setOnClickListener { run(force = true) }
+
+        binding.ringTitle.setOnLongClickListener { copyReport() }
+        binding.ringSub.setOnLongClickListener { copyReport() }
 
         binding.recycler.layoutManager = LinearLayoutManager(this)
         binding.recycler.adapter = adapter
@@ -89,7 +102,7 @@ class DiagnosticsActivity : AppCompatActivity() {
         run()
     }
 
-    private fun run() {
+    private fun run(force: Boolean = false) {
         // runAll() is not cheap: isBlackProcessRunning() goes through
         // ProviderCall.callSafely() -> ContentProviderCompat.acquireContentProviderClientRetry(),
         // a blocking sleep loop with a 2000 ms budget, and the engine probe is a binder
@@ -98,7 +111,7 @@ class DiagnosticsActivity : AppCompatActivity() {
         running = true
         lifecycleScope.launch {
             try {
-                val checks = withContext(Dispatchers.IO) { diag.runAll() }
+                val checks = withContext(Dispatchers.IO) { diag.runAll(force) }
                 adapter.submit(checks)
                 renderSummary(checks)
             } catch (e: CancellationException) {
@@ -112,9 +125,12 @@ class DiagnosticsActivity : AppCompatActivity() {
     }
 
     private fun renderSummary(checks: List<Check>) {
+        lastChecks = checks
         val passed = checks.count { it.ok }
         val total = checks.size
-        val failed = total - passed
+        // Only blockers drive the ring and the title. A degraded or informational failure
+        // is context, not a reason to shout "needs attention" on a healthy install.
+        val blockers = checks.count { !it.ok && it.severity == CheckSeverity.BLOCKER }
 
         binding.ringNum.text = passed.toString()
         binding.ringDen.text = "/$total"
@@ -123,22 +139,46 @@ class DiagnosticsActivity : AppCompatActivity() {
         animateRing(fraction)
 
         val ringColor = when {
-            failed == 0 -> R.color.success
-            failed <= 2 -> R.color.warn
+            blockers == 0 -> R.color.success
+            blockers <= 2 -> R.color.warn
             else -> R.color.danger
         }
         binding.ring.setRingColor(ContextCompat.getColor(this, ringColor))
 
-        binding.ringTitle.text = if (failed == 0) {
+        binding.ringTitle.text = if (blockers == 0) {
             getString(R.string.nc_healthy)
         } else {
-            getString(R.string.nc_needs_attention, failed)
+            getString(R.string.nc_needs_attention, blockers)
         }
         binding.ringSub.text = getString(R.string.nc_checks_summary, passed, total)
 
         val stamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         binding.ringMeta.text = getString(R.string.nc_last_run, stamp)
         binding.subtitle.text = getString(R.string.nc_checks_summary, passed, total)
+    }
+
+    /**
+     * Copy the whole sweep to the clipboard as plain text.
+     *
+     * Long-press on the summary, because the useful thing to do with a failing report is
+     * paste it into a bug report and there is no share target on this screen.
+     */
+    private fun copyReport(): Boolean {
+        val checks = lastChecks
+        if (checks.isEmpty()) return true
+        val report = buildString {
+            appendLine("NexusClone diagnostics")
+            appendLine("${checks.count { it.ok }} of ${checks.size} checks passing")
+            appendLine()
+            checks.forEach { c ->
+                val state = if (c.ok) "PASS" else "FAIL"
+                appendLine("[$state] ${c.title}: ${c.detail}")
+            }
+        }
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("NexusClone diagnostics", report))
+        Toast.makeText(this, R.string.diag_copied, Toast.LENGTH_SHORT).show()
+        return true
     }
 
     private fun animateRing(target: Float) {
@@ -204,10 +244,34 @@ class DiagnosticsActivity : AppCompatActivity() {
                 b.detail.text = c.detail
 
                 // Theme colours, not hardcoded ints: these flip with the night palette.
-                val (glyph, tint, label) = if (c.ok) {
-                    Triple(R.drawable.ic_nc_check, R.color.success, R.string.nc_pass)
+                // A failing row is tinted by severity so a blocker reads louder than an
+                // informational miss.
+                val glyph: Int
+                val tint: Int
+                val soft: Int
+                val label: Int
+                if (c.ok) {
+                    glyph = R.drawable.ic_nc_check
+                    tint = R.color.success
+                    soft = R.color.success_soft
+                    label = R.string.nc_pass
                 } else {
-                    Triple(R.drawable.ic_nc_alert, R.color.danger, R.string.nc_fail)
+                    glyph = R.drawable.ic_nc_alert
+                    label = R.string.nc_fail
+                    when (c.severity) {
+                        CheckSeverity.BLOCKER -> {
+                            tint = R.color.danger
+                            soft = R.color.danger_soft
+                        }
+                        CheckSeverity.DEGRADED -> {
+                            tint = R.color.warn
+                            soft = R.color.warn_soft
+                        }
+                        CheckSeverity.INFO -> {
+                            tint = R.color.text_secondary
+                            soft = R.color.warn_soft
+                        }
+                    }
                 }
 
                 val color = ContextCompat.getColor(this@DiagnosticsActivity, tint)
@@ -215,21 +279,43 @@ class DiagnosticsActivity : AppCompatActivity() {
                 b.checkGlyph.setColorFilter(color)
                 b.checkIcon.backgroundTintList = ContextCompat.getColorStateList(
                     this@DiagnosticsActivity,
-                    if (c.ok) R.color.success_soft else R.color.danger_soft
+                    soft
                 )
                 b.state.setText(label)
                 b.state.setTextColor(color)
 
-                // Only the failing battery row is actionable: tapping it asks the system
-                // for the exemption that the check is reporting as missing.
-                if (c.id == "battery" && !c.ok) {
-                    b.root.isClickable = true
-                    b.root.setOnClickListener { requestBatteryExemption() }
-                } else {
+                // A failing row with a remedy is a one-tap fix. Rows without one stay inert
+                // so a tap never looks like it did something.
+                val remedy = if (c.ok) CheckRemedy.NONE else c.remedy
+                if (remedy == CheckRemedy.NONE) {
                     b.root.isClickable = false
                     b.root.setOnClickListener(null)
+                } else {
+                    b.root.isClickable = true
+                    b.root.setOnClickListener { applyRemedy(remedy) }
                 }
             }
+        }
+    }
+
+    /** Run the one-tap fix attached to a failing check. */
+    private fun applyRemedy(remedy: CheckRemedy) {
+        when (remedy) {
+            CheckRemedy.BATTERY_EXEMPTION -> requestBatteryExemption()
+            CheckRemedy.KEEPALIVE_SETTINGS -> startActivity(Intent(this, SettingActivity::class.java))
+            CheckRemedy.OVERLAY_PERMISSION -> {
+                try {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:$packageName")
+                        )
+                    )
+                } catch (e: ActivityNotFoundException) {
+                    Log.w(TAG, "overlay permission screen unavailable: ${e.message}")
+                }
+            }
+            CheckRemedy.NONE -> Unit
         }
     }
 }
